@@ -24,8 +24,6 @@ import com.datasophon.dao.entity.ClusterHostDO;
 
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.List;
-
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,8 +31,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
 @Slf4j
 @RestController
@@ -49,11 +45,7 @@ public class ClusterHostController {
      */
     @RequestMapping("/all")
     public Result all(Integer clusterId) {
-        List<ClusterHostDO> list =
-                clusterHostService.list(new QueryWrapper<ClusterHostDO>().eq(Constants.CLUSTER_ID, clusterId)
-                        .eq(Constants.MANAGED, 1)
-                        .orderByAsc(Constants.HOSTNAME));
-        return Result.success(list);
+        return Result.success(clusterHostService.getHostListByClusterId(clusterId));
     }
     
     /**
