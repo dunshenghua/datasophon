@@ -58,7 +58,13 @@ public class ClusterServiceCommandController {
     @UserPermission
     @RequestMapping("/generateCommand")
     public Result generateCommand(Integer clusterId, String commandType, String serviceNames) {
+        if (StringUtils.isBlank(serviceNames)) {
+            return Result.error(Status.NO_SERVICE_EXECUTE.getMsg());
+        }
         CommandType command = EnumUtil.fromString(CommandType.class, commandType);
+        if (command == null) {
+            return Result.error(Status.NO_SERVICE_EXECUTE.getMsg());
+        }
         List<String> list = Arrays.asList(serviceNames.split(","));
         return clusterServiceCommandService.generateCommand(clusterId, command, list);
     }
@@ -69,14 +75,15 @@ public class ClusterServiceCommandController {
     @RequestMapping("/generateServiceCommand")
     @UserPermission
     public Result generateServiceCommand(Integer clusterId, String commandType, String serviceInstanceIds) {
-        CommandType command = EnumUtil.fromString(CommandType.class, commandType);
-        if (StringUtils.isNotBlank(serviceInstanceIds)) {
-            List<String> ids = Arrays.asList(serviceInstanceIds.split(","));
-            return clusterServiceCommandService.generateServiceCommand(clusterId, command, ids);
-        } else {
+        if (StringUtils.isBlank(serviceInstanceIds)) {
             return Result.error(Status.NO_SERVICE_EXECUTE.getMsg());
         }
-        
+        CommandType command = EnumUtil.fromString(CommandType.class, commandType);
+        if (command == null) {
+            return Result.error(Status.NO_SERVICE_EXECUTE.getMsg());
+        }
+        List<String> ids = Arrays.asList(serviceInstanceIds.split(","));
+        return clusterServiceCommandService.generateServiceCommand(clusterId, command, ids);
     }
     
     /**
@@ -86,10 +93,15 @@ public class ClusterServiceCommandController {
     @UserPermission
     public Result generateServiceRoleCommand(Integer clusterId, String commandType, Integer serviceInstanceId,
                                              String serviceRoleInstancesIds) {
+        if (StringUtils.isBlank(serviceRoleInstancesIds)) {
+            return Result.error(Status.NO_SERVICE_EXECUTE.getMsg());
+        }
         CommandType command = EnumUtil.fromString(CommandType.class, commandType);
+        if (command == null) {
+            return Result.error(Status.NO_SERVICE_EXECUTE.getMsg());
+        }
         List<String> ids = Arrays.asList(serviceRoleInstancesIds.split(","));
         return clusterServiceCommandService.generateServiceRoleCommand(clusterId, command, serviceInstanceId, ids);
-        
     }
     
     /**
@@ -98,6 +110,9 @@ public class ClusterServiceCommandController {
     @RequestMapping("/startExecuteCommand")
     @UserPermission
     public Result startExecuteCommand(Integer clusterId, String commandType, String commandIds) {
+        if (StringUtils.isBlank(commandIds)) {
+            return Result.error(Status.NO_SERVICE_EXECUTE.getMsg());
+        }
         clusterServiceCommandService.startExecuteCommand(clusterId, commandType, commandIds);
         return Result.success();
     }

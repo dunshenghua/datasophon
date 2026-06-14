@@ -24,12 +24,10 @@ import com.datasophon.api.service.ClusterInfoService;
 import com.datasophon.api.service.ClusterServiceCommandHostCommandService;
 import com.datasophon.api.service.ClusterServiceCommandHostService;
 import com.datasophon.api.service.ClusterServiceCommandService;
-import com.datasophon.api.service.ClusterServiceInstanceConfigService;
 import com.datasophon.api.service.ClusterServiceInstanceService;
 import com.datasophon.api.service.ClusterServiceRoleInstanceService;
 import com.datasophon.api.service.FrameServiceRoleService;
 import com.datasophon.api.service.FrameServiceService;
-import com.datasophon.api.service.host.ClusterHostService;
 import com.datasophon.api.utils.ProcessUtils;
 import com.datasophon.common.Constants;
 import com.datasophon.common.cache.CacheUtils;
@@ -44,6 +42,7 @@ import com.datasophon.dao.entity.ClusterServiceInstanceEntity;
 import com.datasophon.dao.entity.ClusterServiceRoleInstanceEntity;
 import com.datasophon.dao.entity.FrameServiceEntity;
 import com.datasophon.dao.entity.FrameServiceRoleEntity;
+import com.datasophon.dao.enums.RoleType;
 import com.datasophon.dao.mapper.ClusterServiceCommandMapper;
 
 import java.util.ArrayList;
@@ -98,13 +97,7 @@ public class ClusterServiceCommandServiceImpl
     private ClusterServiceCommandService commandService;
     
     @Autowired
-    private ClusterHostService hostService;
-    
-    @Autowired
     private ClusterServiceInstanceService serviceInstanceService;
-    
-    @Autowired
-    private ClusterServiceInstanceConfigService serviceInstanceConfigService;
     
     @Autowired
     private ClusterServiceRoleInstanceService roleInstanceService;
@@ -113,69 +106,43 @@ public class ClusterServiceCommandServiceImpl
     @Transactional
     public Result generateCommand(Integer clusterId, CommandType commandType, List<String> serviceNames) {
         ClusterInfoEntity clusterInfo = clusterInfoService.getById(clusterId);
-        
-        List<ClusterServiceCommandEntity> list = new ArrayList<>();
-        List<ClusterServiceCommandHostEntity> commandHostList = new ArrayList<>();
-        List<ClusterServiceCommandHostCommandEntity> hostCommandList = new ArrayList<>();
-        List<String> commandIds = new ArrayList<String>();
-        
+        CommandBuildContext ctx = new CommandBuildContext();
+
         Map<String, List<String>> serviceRoleHostMap = (Map<String, List<String>>) CacheUtils
                 .get(clusterInfo.getClusterCode() + Constants.UNDERLINE + Constants.SERVICE_ROLE_HOST_MAPPING);
-        
+
         for (String serviceName : serviceNames) {
-            // 1、生成操作指令
             ClusterServiceInstanceEntity serviceInstance =
                     serviceInstanceService.getServiceInstanceByClusterIdAndServiceName(clusterId, serviceName);
-            
             ClusterServiceCommandEntity commandEntity =
                     ProcessUtils.generateCommandEntity(clusterId, commandType, serviceName);
             commandEntity.setServiceInstanceId(serviceInstance.getId());
-            list.add(commandEntity);
-            String commandId = commandEntity.getCommandId();
-            commandIds.add(commandId);
-            
-            // 查询服务的服务角色
+            ctx.beginCommand(commandEntity);
+
             FrameServiceEntity frameService =
                     frameServiceService.getServiceByFrameCodeAndServiceName(clusterInfo.getClusterFrame(), serviceName);
             Result result =
                     frameServiceRoleService.getServiceRoleList(clusterId, String.valueOf(frameService.getId()), null);
             List<FrameServiceRoleEntity> serviceRoleList = (List<FrameServiceRoleEntity>) result.getData();
-            HashMap<String, ClusterServiceCommandHostEntity> map = new HashMap<>();
             for (FrameServiceRoleEntity serviceRole : serviceRoleList) {
                 if (Objects.nonNull(serviceRoleHostMap)
                         && serviceRoleHostMap.containsKey(serviceRole.getServiceRoleName())) {
                     List<String> hosts = serviceRoleHostMap.get(serviceRole.getServiceRoleName());
                     for (String hostname : hosts) {
-                        if (alreadyExistsServiceRole(serviceRole.getServiceRoleName(), hostname, clusterId)) {
-                            continue;
-                        } else {
-                            ClusterServiceCommandHostEntity commandHost;
-                            if (map.containsKey(hostname)) {
-                                commandHost = map.get(hostname);
-                            } else {
-                                commandHost = ProcessUtils.generateCommandHostEntity(commandId, hostname);
-                                commandHostList.add(commandHost);
-                                map.put(hostname, commandHost);
-                            }
-                            // 4、生成主机操作指令
-                            ClusterServiceCommandHostCommandEntity hostCommand =
-                                    ProcessUtils.generateCommandHostCommandEntity(commandType, commandId,
-                                            serviceRole.getServiceRoleName(), serviceRole.getServiceRoleType(),
-                                            commandHost);
-                            hostCommandList.add(hostCommand);
+                        if (!alreadyExistsServiceRole(serviceRole.getServiceRoleName(), hostname, clusterId)) {
+                            ctx.addRoleOnHost(commandType, commandEntity.getCommandId(),
+                                    hostname, serviceRole.getServiceRoleName(), serviceRole.getServiceRoleType());
                         }
                     }
                 }
             }
         }
-        if (commandHostList.isEmpty()) {
+        if (!ctx.hasHostCommands()) {
             logger.warn("No service role selected");
             return Result.error(Status.NO_SERVICE_ROLE_SELECTED.getMsg());
         }
-        commandService.saveBatch(list);
-        commandHostService.saveBatch(commandHostList);
-        hostCommandService.saveBatch(hostCommandList);
-        return Result.success(String.join(",", commandIds));
+        persistCommandEntities(ctx);
+        return Result.success(ctx.joinedCommandIds());
     }
     
     private boolean alreadyExistsServiceRole(String serviceRoleName, String hostname, Integer clusterId) {
@@ -196,15 +163,7 @@ public class ClusterServiceCommandServiceImpl
         Integer total = this.count(new QueryWrapper<ClusterServiceCommandEntity>()
                 .eq(Constants.CLUSTER_ID, clusterId));
         for (ClusterServiceCommandEntity commandEntity : list) {
-            commandEntity.setCommandStateCode(commandEntity.getCommandState().getValue());
-            Date createTime = commandEntity.getCreateTime();
-            Date endTime = commandEntity.getEndTime();
-            if (Objects.isNull(endTime)) {
-                endTime = new Date();
-            }
-            long between = DateUtil.between(createTime, endTime, DateUnit.MS);
-            String durationTime = DateUtil.formatBetween(between, BetweenFormatter.Level.SECOND);
-            commandEntity.setDurationTime(durationTime);
+            populateTransientFields(commandEntity);
         }
         return Result.success(list).put(Constants.TOTAL, total);
     }
@@ -221,13 +180,9 @@ public class ClusterServiceCommandServiceImpl
      */
     @Override
     public Result generateServiceCommand(Integer clusterId, CommandType commandType, List<String> serviceInstanceIds) {
-        List<ClusterServiceCommandEntity> list = new ArrayList<>();
-        List<ClusterServiceCommandHostEntity> commandHostList = new ArrayList<>();
-        List<ClusterServiceCommandHostCommandEntity> hostCommandList = new ArrayList<>();
-        List<String> commandIds = new ArrayList<>();
+        CommandBuildContext ctx = new CommandBuildContext();
         for (String serviceInstanceId : serviceInstanceIds) {
             int id = Integer.parseInt(serviceInstanceId);
-            // 查询服务对应的服务角色实例
             List<ClusterServiceRoleInstanceEntity> roleInstanceList =
                     roleInstanceService.getServiceRoleInstanceListByServiceId(id);
             if (Objects.isNull(roleInstanceList) || roleInstanceList.isEmpty()) {
@@ -236,38 +191,19 @@ public class ClusterServiceCommandServiceImpl
             ClusterServiceInstanceEntity serviceInstance = serviceInstanceService.getById(id);
             ClusterServiceCommandEntity commandEntity =
                     ProcessUtils.generateCommandEntity(clusterId, commandType, serviceInstance.getServiceName());
-            String commandId = commandEntity.getCommandId();
             commandEntity.setServiceInstanceId(id);
-            commandIds.add(commandId);
-            list.add(commandEntity);
-            
-            HashMap<String, ClusterServiceCommandHostEntity> map = new HashMap<>();
+            ctx.beginCommand(commandEntity);
+
             for (ClusterServiceRoleInstanceEntity roleInstance : roleInstanceList) {
-                ClusterServiceCommandHostEntity commandHost;
-                if (map.containsKey(roleInstance.getHostname())) {
-                    commandHost = map.get(roleInstance.getHostname());
-                } else {
-                    commandHost = ProcessUtils.generateCommandHostEntity(commandId, roleInstance.getHostname());
-                    commandHostList.add(commandHost);
-                }
-                ClusterServiceCommandHostCommandEntity hostCommand =
-                        ProcessUtils.generateCommandHostCommandEntity(commandType, commandId,
-                                roleInstance.getServiceRoleName(), roleInstance.getRoleType(), commandHost);
-                hostCommandList.add(hostCommand);
-                map.put(roleInstance.getHostname(), commandHost);
+                ctx.addRoleOnHost(commandType, commandEntity.getCommandId(),
+                        roleInstance.getHostname(), roleInstance.getServiceRoleName(), roleInstance.getRoleType());
             }
         }
-        if (!list.isEmpty()) {
-            commandService.saveBatch(list);
-            commandHostService.saveBatch(commandHostList);
-            hostCommandService.saveBatch(hostCommandList);
-            
-            // 通知commandActor执行命令
-            ActorRef dagBuildActor =
-                    ActorUtils.getLocalActor(DAGBuildActor.class, ActorUtils.getActorRefName(DAGBuildActor.class));
-            dagBuildActor.tell(new StartExecuteCommandCommand(commandIds, clusterId, commandType), ActorRef.noSender());
+        if (ctx.hasCommands()) {
+            persistCommandEntities(ctx);
+            dispatchExecution(ctx.commandIds, clusterId, commandType);
         }
-        return Result.success(String.join(",", commandIds));
+        return Result.success(ctx.joinedCommandIds());
     }
     
     @Override
@@ -283,55 +219,30 @@ public class ClusterServiceCommandServiceImpl
     @Override
     public Result generateServiceRoleCommand(Integer clusterId, CommandType commandType, Integer serviceInstanceId,
                                              List<String> serviceRoleInstanceIds) {
-        List<ClusterServiceCommandEntity> list = new ArrayList<>();
-        List<ClusterServiceCommandHostEntity> commandHostList = new ArrayList<>();
-        List<ClusterServiceCommandHostCommandEntity> hostCommandList = new ArrayList<>();
-        List<String> commandIds = new ArrayList<>();
-        
+        CommandBuildContext ctx = new CommandBuildContext();
+
         ClusterServiceInstanceEntity serviceInstance = serviceInstanceService.getById(serviceInstanceId);
         ClusterServiceCommandEntity commandEntity =
                 ProcessUtils.generateCommandEntity(clusterId, commandType, serviceInstance.getServiceName());
-        String commandId = commandEntity.getCommandId();
         commandEntity.setServiceInstanceId(serviceInstanceId);
-        commandIds.add(commandId);
-        list.add(commandEntity);
-        // 查询服务对应的服务角色实例
-        HashMap<String, ClusterServiceCommandHostEntity> map = new HashMap<>();
+        ctx.beginCommand(commandEntity);
+
         for (String serviceRoleInstanceId : serviceRoleInstanceIds) {
             int id = Integer.parseInt(serviceRoleInstanceId);
             ClusterServiceRoleInstanceEntity roleInstance = roleInstanceService.getById(id);
-            
-            ClusterServiceCommandHostEntity commandHost;
-            if (map.containsKey(roleInstance.getHostname())) {
-                commandHost = map.get(roleInstance.getHostname());
-            } else {
-                commandHost = ProcessUtils.generateCommandHostEntity(commandId, roleInstance.getHostname());
-                commandHostList.add(commandHost);
-            }
-            ClusterServiceCommandHostCommandEntity hostCommand = ProcessUtils.generateCommandHostCommandEntity(
-                    commandType, commandId, roleInstance.getServiceRoleName(), roleInstance.getRoleType(), commandHost);
-            hostCommandList.add(hostCommand);
-            map.put(roleInstance.getHostname(), commandHost);
+            ctx.addRoleOnHost(commandType, commandEntity.getCommandId(),
+                    roleInstance.getHostname(), roleInstance.getServiceRoleName(), roleInstance.getRoleType());
         }
-        commandService.saveBatch(list);
-        commandHostService.saveBatch(commandHostList);
-        hostCommandService.saveBatch(hostCommandList);
-        
-        // 通知commandActor执行命令
-        ActorRef dagBuildActor =
-                ActorUtils.getLocalActor(DAGBuildActor.class, ActorUtils.getActorRefName(DAGBuildActor.class));
-        dagBuildActor.tell(new StartExecuteCommandCommand(commandIds, clusterId, commandType), ActorRef.noSender());
-        return Result.success(String.join(",", commandIds));
+        persistCommandEntities(ctx);
+        dispatchExecution(ctx.commandIds, clusterId, commandType);
+        return Result.success(ctx.joinedCommandIds());
     }
     
     @Override
     public void startExecuteCommand(Integer clusterId, String commandType, String commandIds) {
         List<String> list = Arrays.asList(commandIds.split(","));
         CommandType command = EnumUtil.fromString(CommandType.class, commandType);
-        // 通知commandActor执行命令
-        ActorRef dagBuildActor =
-                ActorUtils.getLocalActor(DAGBuildActor.class, ActorUtils.getActorRefName(DAGBuildActor.class));
-        dagBuildActor.tell(new StartExecuteCommandCommand(list, clusterId, command), ActorRef.noSender());
+        dispatchExecution(list, clusterId, command);
     }
     
     @Override
@@ -353,5 +264,65 @@ public class ClusterServiceCommandServiceImpl
     public ClusterServiceCommandEntity getCommandById(String commandId) {
         return this.getOne(
                 new QueryWrapper<ClusterServiceCommandEntity>().eq("command_id", commandId));
+    }
+
+    private void persistCommandEntities(CommandBuildContext ctx) {
+        commandService.saveBatch(ctx.commands);
+        commandHostService.saveBatch(ctx.commandHosts);
+        hostCommandService.saveBatch(ctx.hostCommands);
+    }
+
+    private void dispatchExecution(List<String> commandIds, Integer clusterId, CommandType commandType) {
+        ActorRef dagBuildActor =
+                ActorUtils.getLocalActor(DAGBuildActor.class, ActorUtils.getActorRefName(DAGBuildActor.class));
+        dagBuildActor.tell(new StartExecuteCommandCommand(commandIds, clusterId, commandType), ActorRef.noSender());
+    }
+
+    private void populateTransientFields(ClusterServiceCommandEntity entity) {
+        entity.setCommandStateCode(entity.getCommandState().getValue());
+        Date endTime = entity.getEndTime() != null ? entity.getEndTime() : new Date();
+        long between = DateUtil.between(entity.getCreateTime(), endTime, DateUnit.MS);
+        entity.setDurationTime(DateUtil.formatBetween(between, BetweenFormatter.Level.SECOND));
+    }
+
+    private static class CommandBuildContext {
+
+        final List<ClusterServiceCommandEntity> commands = new ArrayList<>();
+        final List<ClusterServiceCommandHostEntity> commandHosts = new ArrayList<>();
+        final List<ClusterServiceCommandHostCommandEntity> hostCommands = new ArrayList<>();
+        final List<String> commandIds = new ArrayList<>();
+        private Map<String, ClusterServiceCommandHostEntity> currentHostMap = new HashMap<>();
+
+        void beginCommand(ClusterServiceCommandEntity command) {
+            commands.add(command);
+            commandIds.add(command.getCommandId());
+            currentHostMap = new HashMap<>();
+        }
+
+        void addRoleOnHost(CommandType commandType, String commandId,
+                           String hostname, String serviceRoleName, RoleType serviceRoleType) {
+            ClusterServiceCommandHostEntity commandHost = currentHostMap.get(hostname);
+            if (commandHost == null) {
+                commandHost = ProcessUtils.generateCommandHostEntity(commandId, hostname);
+                commandHosts.add(commandHost);
+                currentHostMap.put(hostname, commandHost);
+            }
+            ClusterServiceCommandHostCommandEntity hostCommand =
+                    ProcessUtils.generateCommandHostCommandEntity(
+                            commandType, commandId, serviceRoleName, serviceRoleType, commandHost);
+            hostCommands.add(hostCommand);
+        }
+
+        boolean hasCommands() {
+            return !commands.isEmpty();
+        }
+
+        boolean hasHostCommands() {
+            return !hostCommands.isEmpty();
+        }
+
+        String joinedCommandIds() {
+            return String.join(",", commandIds);
+        }
     }
 }
