@@ -38,7 +38,8 @@ public final class Constants {
     public static final String HOST_MD5 = "_host_md5";
     public static final String ID_RSA = PropertyUtils.getString("id_rsa", "/.ssh/id_rsa");
     public static final String HOSTNAME = "hostname";
-    
+    public static final String IP = "ip";
+
     public static final String MASTER_MANAGE_PACKAGE_PATH = INSTALL_PATH + "/DDP/packages";
     public static final String UNZIP_DDH_WORKER_CMD =
             "tar -zxvf " + INSTALL_PATH + "/datasophon-worker.tar.gz -C " + INSTALL_PATH;

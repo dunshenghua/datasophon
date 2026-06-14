@@ -48,6 +48,7 @@ import scala.concurrent.duration.FiniteDuration;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -65,7 +66,9 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
 import akka.actor.ActorRef;
 import cn.hutool.crypto.SecureUtil;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service("clusterHostService")
 @Transactional
 public class ClusterHostServiceImpl extends ServiceImpl<ClusterHostMapper, ClusterHostDO>
@@ -83,53 +86,34 @@ public class ClusterHostServiceImpl extends ServiceImpl<ClusterHostMapper, Clust
     
     @Autowired
     ClusterRackService clusterRackService;
-    
-    private final String ip = "ip";
-    
+
     @Override
+    @Transactional(readOnly = true)
     public ClusterHostDO getClusterHostByHostname(String hostname) {
         return hostMapper.getClusterHostByHostname(hostname);
     }
     
     @Override
+    @Transactional(readOnly = true)
     public Result listByPage(Integer clusterId, String hostname, String ip, String cpuArchitecture, Integer hostState,
                              String orderField, String orderType, Integer page, Integer pageSize) {
-        List<QueryHostListPageDTO> hostListPageDTOS = new ArrayList<>();
         int offset = (page - 1) * pageSize;
-        List<ClusterHostDO> list =
-                this.list(new QueryWrapper<ClusterHostDO>().eq(Constants.CLUSTER_ID, clusterId)
-                        .eq(Constants.MANAGED, 1)
-                        .eq(StringUtils.isNotBlank(cpuArchitecture), Constants.CPU_ARCHITECTURE, cpuArchitecture)
-                        .eq(hostState != null, Constants.HOST_STATE, hostState)
-                        .like(StringUtils.isNotBlank(ip), this.ip, ip)
-                        .like(StringUtils.isNotBlank(hostname), Constants.HOSTNAME, hostname)
-                        .orderByAsc("asc".equals(orderType), orderField)
-                        .orderByDesc("desc".equals(orderType), orderField)
-                        .last("limit " + offset + "," + pageSize));
-        
-        // 回显rack的名称 而不是ID
-        Map<String, String> rackMap = clusterRackService.queryClusterRack(clusterId).stream()
-                .collect(Collectors.toMap(obj -> obj.getId() + "", ClusterRack::getRack));
-        for (ClusterHostDO clusterHostDO : list) {
-            QueryHostListPageDTO queryHostListPageDTO = new QueryHostListPageDTO();
-            BeanUtils.copyProperties(clusterHostDO, queryHostListPageDTO);
-            // 查询主机上服务角色数
-            int serviceRoleNum = roleInstanceService.count(new QueryWrapper<ClusterServiceRoleInstanceEntity>()
-                    .eq(Constants.HOSTNAME, clusterHostDO.getHostname()));
-            queryHostListPageDTO.setServiceRoleNum(serviceRoleNum);
-            queryHostListPageDTO.setHostState(clusterHostDO.getHostState().getValue());
-            queryHostListPageDTO.setRack(rackMap.getOrDefault(queryHostListPageDTO.getRack(), "/default-rack"));
-            hostListPageDTOS.add(queryHostListPageDTO);
-        }
-        int count = this.count(new QueryWrapper<ClusterHostDO>().eq(Constants.CLUSTER_ID, clusterId)
-                .eq(Constants.MANAGED, 1)
-                .eq(StringUtils.isNotBlank(cpuArchitecture), Constants.CPU_ARCHITECTURE, cpuArchitecture)
-                .eq(hostState != null, Constants.HOST_STATE, hostState)
-                .like(StringUtils.isNotBlank(hostname), Constants.HOSTNAME, hostname));
-        return Result.success(hostListPageDTOS).put(Constants.TOTAL, count);
+
+        QueryWrapper<ClusterHostDO> baseQuery = buildHostQuery(clusterId, hostname, ip, cpuArchitecture, hostState);
+
+        List<ClusterHostDO> list = this.list(buildHostQuery(clusterId, hostname, ip, cpuArchitecture, hostState)
+                .orderByAsc("asc".equals(orderType), orderField)
+                .orderByDesc("desc".equals(orderType), orderField)
+                .last("limit " + offset + "," + pageSize));
+
+        int count = this.count(baseQuery);
+
+        List<QueryHostListPageDTO> dtos = enrichHostListResults(list, clusterId);
+        return Result.success(dtos).put(Constants.TOTAL, count);
     }
     
     @Override
+    @Transactional(readOnly = true)
     public List<ClusterHostDO> getHostListByClusterId(Integer clusterId) {
         return this.list(new QueryWrapper<ClusterHostDO>()
                 .eq(Constants.CLUSTER_ID, clusterId)
@@ -137,6 +121,7 @@ public class ClusterHostServiceImpl extends ServiceImpl<ClusterHostMapper, Clust
     }
     
     @Override
+    @Transactional(readOnly = true)
     public Result getRoleListByHostname(Integer clusterId, String hostname) {
         List<ClusterServiceRoleInstanceEntity> list =
                 roleInstanceService.getServiceRoleListByHostnameAndClusterId(hostname, clusterId);
@@ -158,85 +143,32 @@ public class ClusterHostServiceImpl extends ServiceImpl<ClusterHostMapper, Clust
     @Override
     @Transactional
     public Result deleteHosts(String hostIds) {
-        // 批量移除
         String[] ids = hostIds.split(Constants.COMMA);
+        log.info("Deleting {} host(s): {}", ids.length, hostIds);
+
         for (String hostId : ids) {
             ClusterHostDO host = this.getById(hostId);
-            // 获取主机上运行的服务
-            List<ClusterServiceRoleInstanceEntity> listRunningService =
-                    roleInstanceService.list(new QueryWrapper<ClusterServiceRoleInstanceEntity>()
-                            .eq(Constants.CLUSTER_ID, host.getClusterId())
-                            .eq(Constants.HOSTNAME, host.getHostname())
-                            .eq(Constants.SERVICE_ROLE_STATE, ServiceRoleState.RUNNING)
-                            .ne(Constants.ROLE_TYPE, RoleType.CLIENT));
-            List<String> runningRoles = listRunningService.stream().map(ClusterServiceRoleInstanceEntity::getServiceRoleName)
-                    .collect(Collectors.toList());
-            if (!listRunningService.isEmpty()) {
-                return Result.error(host.getHostname() + Status.HOST_EXIT_ONE_RUNNING_ROLE.getMsg() + runningRoles);
+            if (host == null) {
+                log.warn("Host with id {} not found, skipping", hostId);
+                continue;
             }
-            // 获取主机上安装的服务
-            List<ClusterServiceRoleInstanceEntity> listInstalledSerivce =
-                    roleInstanceService.list(new QueryWrapper<ClusterServiceRoleInstanceEntity>()
-                            .eq(Constants.CLUSTER_ID, host.getClusterId())
-                            .eq(Constants.HOSTNAME, host.getHostname()));
-            List<String> installedRoles = listInstalledSerivce.stream().map(ClusterServiceRoleInstanceEntity::getServiceRoleName)
-                    .collect(Collectors.toList());
-            if (!listInstalledSerivce.isEmpty()) {
-                return Result.error(host.getHostname() + Status.HOST_EXIT_ONE_INSTALLED_ROLE.getMsg() + installedRoles);
+
+            Result validationError = validateHostDeletion(host);
+            if (validationError != null) {
+                return validationError;
             }
 
             ClusterInfoEntity clusterInfo = clusterInfoService.getById(host.getClusterId());
             String clusterCode = clusterInfo.getClusterCode();
-            String distributeAgentKey = clusterCode + Constants.UNDERLINE + Constants.START_DISTRIBUTE_AGENT;
-            if (CacheUtils.constainsKey(distributeAgentKey + Constants.UNDERLINE + host.getHostname())) {
-                CacheUtils.removeKey(distributeAgentKey + Constants.UNDERLINE + host.getHostname());
-            }
-            
-            this.removeById(hostId);
-            
-            if (host.getHostState() != HostState.OFFLINE) {
-                // stop the worker on this host
-                ActorRef execCmdActor = ActorUtils.getRemoteActor(host.getHostname(), "executeCmdActor");
-                ExecuteCmdCommand command = new ExecuteCmdCommand();
-                ArrayList<String> commands = new ArrayList<>();
-                commands.add("service");
-                commands.add("datasophon-worker");
-                commands.add("stop");
-                
-                command.setCommands(commands);
-                execCmdActor.tell(command, ActorRef.noSender());
-            }
-            // remove host from prometheus
-            ActorRef prometheusActor =
-                    ActorUtils.getLocalActor(PrometheusActor.class, ActorUtils.getActorRefName(PrometheusActor.class));
-            
-            // Prometheus 移除 hosts 信息
-            GenerateHostPrometheusConfig prometheusConfigCommand = new GenerateHostPrometheusConfig();
-            prometheusConfigCommand.setClusterId(clusterInfo.getId());
-            
-            ActorUtils.actorSystem.scheduler().scheduleOnce(
-                    FiniteDuration.apply(3L, TimeUnit.SECONDS),
-                    prometheusActor,
-                    prometheusConfigCommand,
-                    ActorUtils.actorSystem.dispatcher(),
-                    ActorRef.noSender());
-            
-            // remove the host from the cache
-            Map<String, HostInfo> map =
-                    (Map<String, HostInfo>) CacheUtils.get(clusterCode + Constants.HOST_MAP);
-            String md5 = SecureUtil.md5(host.getHostname());
-            if (Objects.nonNull(map)) {
-                map.remove(host.getHostname());
-            }
-            if (CacheUtils.constainsKey(clusterCode + Constants.HOST_MD5)
-                    && md5.equals(CacheUtils.getString(clusterCode + Constants.HOST_MD5))) {
-                CacheUtils.removeKey(clusterCode + Constants.HOST_MD5);
-            }
+
+            removeHostFromDatabase(hostId, host, clusterCode);
+            performPostDeletionCleanup(host, clusterInfo);
         }
         return Result.success();
     }
     
     @Override
+    @Transactional(readOnly = true)
     public Result getRack(Integer clusterId) {
         ArrayList<JSONObject> list = new ArrayList<>();
         JSONObject rack = new JSONObject();
@@ -260,6 +192,7 @@ public class ClusterHostServiceImpl extends ServiceImpl<ClusterHostMapper, Clust
     }
     
     @Override
+    @Transactional(readOnly = true)
     public List<ClusterHostDO> getHostListByIds(List<String> ids) {
         return this.lambdaQuery().in(ClusterHostDO::getId, ids).or().in(ClusterHostDO::getHostname, ids).list();
     }
@@ -281,9 +214,158 @@ public class ClusterHostServiceImpl extends ServiceImpl<ClusterHostMapper, Clust
     }
     
     @Override
+    @Transactional(readOnly = true)
     public List<ClusterHostDO> getClusterHostByRack(Integer clusterId, String rack) {
         return this.list(new QueryWrapper<ClusterHostDO>()
                 .eq(Constants.CLUSTER_ID, clusterId)
                 .eq(Constants.RACK, rack));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ClusterHostDO> listManagedHostsByClusterId(Integer clusterId) {
+        return this.list(new QueryWrapper<ClusterHostDO>()
+                .eq(Constants.CLUSTER_ID, clusterId)
+                .eq(Constants.MANAGED, 1)
+                .orderByAsc(Constants.HOSTNAME));
+    }
+
+    // ======================== listByPage helpers ========================
+
+    private QueryWrapper<ClusterHostDO> buildHostQuery(Integer clusterId, String hostname, String ip,
+                                                       String cpuArchitecture, Integer hostState) {
+        return new QueryWrapper<ClusterHostDO>()
+                .eq(Constants.CLUSTER_ID, clusterId)
+                .eq(Constants.MANAGED, 1)
+                .eq(StringUtils.isNotBlank(cpuArchitecture), Constants.CPU_ARCHITECTURE, cpuArchitecture)
+                .eq(hostState != null, Constants.HOST_STATE, hostState)
+                .like(StringUtils.isNotBlank(ip), Constants.IP, ip)
+                .like(StringUtils.isNotBlank(hostname), Constants.HOSTNAME, hostname);
+    }
+
+    private Map<String, String> buildRackNameMap(Integer clusterId) {
+        List<ClusterRack> racks = clusterRackService.queryClusterRack(clusterId);
+        if (racks == null || racks.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return racks.stream()
+                .collect(Collectors.toMap(rack -> rack.getId() + "", ClusterRack::getRack));
+    }
+
+    private List<QueryHostListPageDTO> enrichHostListResults(List<ClusterHostDO> hostList, Integer clusterId) {
+        if (hostList.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<String, String> rackMap = buildRackNameMap(clusterId);
+
+        List<QueryHostListPageDTO> result = new ArrayList<>(hostList.size());
+        for (ClusterHostDO clusterHostDO : hostList) {
+            QueryHostListPageDTO dto = new QueryHostListPageDTO();
+            BeanUtils.copyProperties(clusterHostDO, dto);
+
+            int serviceRoleNum = roleInstanceService.count(new QueryWrapper<ClusterServiceRoleInstanceEntity>()
+                    .eq(Constants.HOSTNAME, clusterHostDO.getHostname()));
+            dto.setServiceRoleNum(serviceRoleNum);
+            dto.setHostState(clusterHostDO.getHostState().getValue());
+            dto.setRack(rackMap.getOrDefault(dto.getRack(), "/default-rack"));
+            result.add(dto);
+        }
+        return result;
+    }
+
+    // ======================== deleteHosts helpers ========================
+
+    private Result validateHostDeletion(ClusterHostDO host) {
+        List<ClusterServiceRoleInstanceEntity> runningServices =
+                roleInstanceService.list(new QueryWrapper<ClusterServiceRoleInstanceEntity>()
+                        .eq(Constants.CLUSTER_ID, host.getClusterId())
+                        .eq(Constants.HOSTNAME, host.getHostname())
+                        .eq(Constants.SERVICE_ROLE_STATE, ServiceRoleState.RUNNING)
+                        .ne(Constants.ROLE_TYPE, RoleType.CLIENT));
+        if (!runningServices.isEmpty()) {
+            List<String> runningRoles = runningServices.stream()
+                    .map(ClusterServiceRoleInstanceEntity::getServiceRoleName)
+                    .collect(Collectors.toList());
+            log.warn("Cannot delete host {}: running roles {}", host.getHostname(), runningRoles);
+            return Result.error(host.getHostname() + Status.HOST_EXIT_ONE_RUNNING_ROLE.getMsg() + runningRoles);
+        }
+
+        List<ClusterServiceRoleInstanceEntity> installedServices =
+                roleInstanceService.list(new QueryWrapper<ClusterServiceRoleInstanceEntity>()
+                        .eq(Constants.CLUSTER_ID, host.getClusterId())
+                        .eq(Constants.HOSTNAME, host.getHostname()));
+        if (!installedServices.isEmpty()) {
+            List<String> installedRoles = installedServices.stream()
+                    .map(ClusterServiceRoleInstanceEntity::getServiceRoleName)
+                    .collect(Collectors.toList());
+            log.warn("Cannot delete host {}: installed roles {}", host.getHostname(), installedRoles);
+            return Result.error(host.getHostname() + Status.HOST_EXIT_ONE_INSTALLED_ROLE.getMsg() + installedRoles);
+        }
+
+        return null;
+    }
+
+    private void removeHostFromDatabase(String hostId, ClusterHostDO host, String clusterCode) {
+        String distributeAgentKey = clusterCode + Constants.UNDERLINE + Constants.START_DISTRIBUTE_AGENT
+                + Constants.UNDERLINE + host.getHostname();
+        if (CacheUtils.constainsKey(distributeAgentKey)) {
+            CacheUtils.removeKey(distributeAgentKey);
+        }
+        this.removeById(hostId);
+        log.info("Removed host {} (id={}) from cluster {}", host.getHostname(), hostId, clusterCode);
+    }
+
+    private void performPostDeletionCleanup(ClusterHostDO host, ClusterInfoEntity clusterInfo) {
+        if (host.getHostState() != HostState.OFFLINE) {
+            stopWorkerOnHost(host.getHostname());
+        }
+        schedulePrometheusRefresh(clusterInfo.getId());
+        removeHostFromCache(host.getHostname(), clusterInfo.getClusterCode());
+    }
+
+    private void stopWorkerOnHost(String hostname) {
+        try {
+            ActorRef execCmdActor = ActorUtils.getRemoteActor(hostname, "executeCmdActor");
+            ExecuteCmdCommand command = new ExecuteCmdCommand();
+            ArrayList<String> commands = new ArrayList<>();
+            commands.add("service");
+            commands.add("datasophon-worker");
+            commands.add("stop");
+            command.setCommands(commands);
+            execCmdActor.tell(command, ActorRef.noSender());
+            log.info("Sent stop-worker command to host {}", hostname);
+        } catch (Exception e) {
+            log.warn("Failed to send stop-worker command to host {}", hostname, e);
+        }
+    }
+
+    private void schedulePrometheusRefresh(Integer clusterId) {
+        ActorRef prometheusActor =
+                ActorUtils.getLocalActor(PrometheusActor.class, ActorUtils.getActorRefName(PrometheusActor.class));
+        GenerateHostPrometheusConfig command = new GenerateHostPrometheusConfig();
+        command.setClusterId(clusterId);
+        ActorUtils.actorSystem.scheduler().scheduleOnce(
+                FiniteDuration.apply(3L, TimeUnit.SECONDS),
+                prometheusActor,
+                command,
+                ActorUtils.actorSystem.dispatcher(),
+                ActorRef.noSender());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void removeHostFromCache(String hostname, String clusterCode) {
+        Map<String, HostInfo> hostMap =
+                (Map<String, HostInfo>) CacheUtils.get(clusterCode + Constants.HOST_MAP);
+        if (Objects.nonNull(hostMap)) {
+            hostMap.remove(hostname);
+            log.debug("Removed host {} from host map cache", hostname);
+        }
+
+        String md5 = SecureUtil.md5(hostname);
+        String md5Key = clusterCode + Constants.HOST_MD5;
+        if (CacheUtils.constainsKey(md5Key)
+                && md5.equals(CacheUtils.getString(md5Key))) {
+            CacheUtils.removeKey(md5Key);
+        }
     }
 }

@@ -17,6 +17,7 @@
 
 package com.datasophon.api.controller;
 
+import com.datasophon.api.enums.Status;
 import com.datasophon.api.service.host.ClusterHostService;
 import com.datasophon.common.Constants;
 import com.datasophon.common.utils.Result;
@@ -34,8 +35,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-
 @Slf4j
 @RestController
 @RequestMapping("api/cluster/host")
@@ -49,10 +48,7 @@ public class ClusterHostController {
      */
     @RequestMapping("/all")
     public Result all(Integer clusterId) {
-        List<ClusterHostDO> list =
-                clusterHostService.list(new QueryWrapper<ClusterHostDO>().eq(Constants.CLUSTER_ID, clusterId)
-                        .eq(Constants.MANAGED, 1)
-                        .orderByAsc(Constants.HOSTNAME));
+        List<ClusterHostDO> list = clusterHostService.listManagedHostsByClusterId(clusterId);
         return Result.success(list);
     }
     
@@ -121,7 +117,7 @@ public class ClusterHostController {
     @RequestMapping("/delete")
     public Result delete(String hostIds) {
         if (StringUtils.isBlank(hostIds)) {
-            return Result.error("请选择移除的主机!");
+            return Result.error(Status.SELECT_LEAST_ONE_HOST.getMsg());
         }
         try {
             return clusterHostService.deleteHosts(hostIds);
