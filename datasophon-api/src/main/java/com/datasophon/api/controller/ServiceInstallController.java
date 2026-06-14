@@ -24,8 +24,11 @@ import com.datasophon.common.model.ServiceConfig;
 import com.datasophon.common.model.ServiceRoleHostMapping;
 import com.datasophon.common.utils.Result;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 
 import javax.servlet.http.HttpServletResponse;
 
@@ -50,6 +53,9 @@ public class ServiceInstallController {
      */
     @RequestMapping("/getServiceConfigOption")
     public Result getServiceConfigOption(Integer clusterId, String serviceName) {
+        if (Objects.isNull(clusterId) || StringUtils.isBlank(serviceName)) {
+            return Result.error("clusterId and serviceName are required");
+        }
         return serviceInstallService.getServiceConfigOption(clusterId, serviceName);
     }
     
@@ -59,10 +65,13 @@ public class ServiceInstallController {
     @RequestMapping("/saveServiceConfig")
     @UserPermission
     public Result saveServiceConfig(Integer clusterId, String serviceName, String serviceConfig, Integer roleGroupId) {
+        if (StringUtils.isBlank(serviceConfig)) {
+            return Result.error("service config is empty");
+        }
         JSONArray jsonArray = JSONArray.parseArray(serviceConfig);
         List<ServiceConfig> list = jsonArray.toJavaList(ServiceConfig.class);
         return serviceInstallService.saveServiceConfig(clusterId, serviceName, list, roleGroupId);
-        
+
     }
     
     /**
@@ -137,6 +146,9 @@ public class ServiceInstallController {
      */
     @RequestMapping("/checkServiceDependency")
     public Result checkServiceDependency(Integer clusterId, String serviceIds) {
+        if (Objects.isNull(clusterId) || StringUtils.isBlank(serviceIds)) {
+            return Result.error("clusterId and serviceIds are required");
+        }
         return serviceInstallService.checkServiceDependency(clusterId, serviceIds);
     }
     
