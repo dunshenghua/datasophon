@@ -20,7 +20,6 @@ package com.datasophon.api.controller;
 import com.datasophon.api.service.ClusterAlertQuotaService;
 import com.datasophon.common.utils.Result;
 import com.datasophon.dao.entity.ClusterAlertQuota;
-import com.datasophon.dao.enums.QuotaState;
 
 import java.util.Arrays;
 
@@ -32,65 +31,78 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("cluster/alert/quota")
 public class ClusterAlertQuotaController {
-    
+
     @Autowired
     private ClusterAlertQuotaService clusterAlertQuotaService;
-    
+
     /**
      * list alert quota
      */
     @RequestMapping("/list")
     public Result info(Integer clusterId, Integer alertGroupId, String quotaName, Integer page, Integer pageSize) {
+        if (page == null || page < 1) {
+            page = 1;
+        }
+        if (pageSize == null || pageSize < 1) {
+            pageSize = 10;
+        }
         return clusterAlertQuotaService.getAlertQuotaList(clusterId, alertGroupId, quotaName, page, pageSize);
     }
-    
+
     /**
      * enable alert quota
      */
     @RequestMapping("/start")
     public Result start(Integer clusterId, String alertQuotaIds) {
-        clusterAlertQuotaService.start(clusterId, alertQuotaIds);
-        return Result.success();
+        if (clusterId == null) {
+            return Result.error("集群ID不能为空");
+        }
+        return clusterAlertQuotaService.start(clusterId, alertQuotaIds);
     }
-    
+
     /**
      * disable alert quota
      */
     @RequestMapping("/stop")
     public Result stop(Integer clusterId, String alertQuotaIds) {
-        clusterAlertQuotaService.stop(clusterId, alertQuotaIds);
-        return Result.success();
+        if (clusterId == null) {
+            return Result.error("集群ID不能为空");
+        }
+        return clusterAlertQuotaService.stop(clusterId, alertQuotaIds);
     }
-    
+
     /**
      * save alert quota
      */
     @RequestMapping("/save")
     public Result save(@RequestBody ClusterAlertQuota clusterAlertQuota) {
-        
-        clusterAlertQuotaService.saveAlertQuota(clusterAlertQuota);
-        return Result.success();
+        if (clusterAlertQuota == null) {
+            return Result.error("告警指标信息不能为空");
+        }
+        return clusterAlertQuotaService.saveAlertQuota(clusterAlertQuota);
     }
-    
+
     /**
      * update alert quota
      */
     @RequestMapping("/update")
     public Result update(@RequestBody ClusterAlertQuota clusterAlertQuota) {
-        clusterAlertQuota.setQuotaState(QuotaState.WAIT_TO_UPDATE);
-        clusterAlertQuotaService.updateById(clusterAlertQuota);
-        
-        return Result.success();
+        if (clusterAlertQuota == null) {
+            return Result.error("告警指标信息不能为空");
+        }
+        return clusterAlertQuotaService.updateAlertQuota(clusterAlertQuota);
     }
-    
+
     /**
      * delete alert quota
      */
     @RequestMapping("/delete")
     public Result delete(@RequestBody Integer[] ids) {
+        if (ids == null || ids.length == 0) {
+            return Result.error("告警指标ID不能为空");
+        }
         clusterAlertQuotaService.removeByIds(Arrays.asList(ids));
-        
         return Result.success();
     }
-    
+
 }

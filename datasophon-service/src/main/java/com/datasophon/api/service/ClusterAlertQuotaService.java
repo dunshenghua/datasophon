@@ -25,21 +25,23 @@ import java.util.List;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**
- * 集群告警指标表 
+ * 集群告警指标表
  *
  * @author gaodayu
  * @email gaodayu2022@163.com
  * @date 2022-06-24 15:10:41
  */
 public interface ClusterAlertQuotaService extends IService<ClusterAlertQuota> {
-    
+
     Result getAlertQuotaList(Integer clusterId, Integer alertGroupId, String quotaName, Integer page, Integer pageSize);
-    
-    void start(Integer clusterId, String alertQuotaIds);
-    
-    void stop(Integer clusterId, String alertQuotaIds);
-    
-    void saveAlertQuota(ClusterAlertQuota clusterAlertQuota);
-    
+
+    Result start(Integer clusterId, String alertQuotaIds);
+
+    Result stop(Integer clusterId, String alertQuotaIds);
+
+    Result saveAlertQuota(ClusterAlertQuota clusterAlertQuota);
+
+    Result updateAlertQuota(ClusterAlertQuota clusterAlertQuota);
+
     List<ClusterAlertQuota> listAlertQuotaByServiceName(String serviceName);
 }

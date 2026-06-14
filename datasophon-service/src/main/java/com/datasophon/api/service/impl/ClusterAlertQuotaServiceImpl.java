@@ -17,15 +17,9 @@
 
 package com.datasophon.api.service.impl;
 
-import com.datasophon.api.master.ActorUtils;
-import com.datasophon.api.master.PrometheusActor;
 import com.datasophon.api.service.AlertGroupService;
 import com.datasophon.api.service.ClusterAlertQuotaService;
 import com.datasophon.common.Constants;
-import com.datasophon.common.command.GenerateAlertConfigCommand;
-import com.datasophon.common.model.AlertItem;
-import com.datasophon.common.model.Generators;
-import com.datasophon.common.utils.CollectionUtils;
 import com.datasophon.common.utils.Result;
 import com.datasophon.dao.entity.AlertGroupEntity;
 import com.datasophon.dao.entity.ClusterAlertQuota;
@@ -39,7 +33,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -55,166 +48,251 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.extension.service.additional.query.impl.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-
-import akka.actor.ActorRef;
-
-import cn.hutool.core.collection.CollUtil;
-import cn.hutool.core.util.StrUtil;
 
 @Service("clusterAlertQuotaService")
 public class ClusterAlertQuotaServiceImpl extends ServiceImpl<ClusterAlertQuotaMapper, ClusterAlertQuota>
         implements
             ClusterAlertQuotaService {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(ClusterAlertQuotaServiceImpl.class);
+
     @Autowired
-    AlertGroupService alertGroupService;
-    
+    private AlertGroupService alertGroupService;
+
+    @Autowired
+    private AlertRuleConfigHelper alertRuleConfigHelper;
+
+    // ======================== Public API ========================
+
     @Override
     public Result getAlertQuotaList(Integer clusterId, Integer alertGroupId, String quotaName, Integer page,
                                     Integer pageSize) {
         Integer offset = (page - 1) * pageSize;
-        
-        LambdaQueryChainWrapper<ClusterAlertQuota> wrapper = this.lambdaQuery()
+
+        Integer countResult = this.lambdaQuery()
                 .eq(alertGroupId != null, ClusterAlertQuota::getAlertGroupId, alertGroupId)
-                .like(StringUtils.isNotBlank(quotaName), ClusterAlertQuota::getAlertQuotaName, quotaName);
-        int count = wrapper.count() == null ? 0 : wrapper.count();
-        List<ClusterAlertQuota> alertQuotaList = wrapper.last("limit " + offset + "," + pageSize).list();
-        if (CollectionUtils.isEmpty(alertQuotaList)) {
+                .like(StringUtils.isNotBlank(quotaName), ClusterAlertQuota::getAlertQuotaName, quotaName)
+                .count();
+        int count = countResult == null ? 0 : countResult;
+
+        List<ClusterAlertQuota> alertQuotaList = this.lambdaQuery()
+                .eq(alertGroupId != null, ClusterAlertQuota::getAlertGroupId, alertGroupId)
+                .like(StringUtils.isNotBlank(quotaName), ClusterAlertQuota::getAlertQuotaName, quotaName)
+                .last("limit " + offset + "," + pageSize)
+                .list();
+
+        if (alertQuotaList == null || alertQuotaList.isEmpty()) {
             return Result.successEmptyCount();
         }
-        // 查询通知组
-        Set<Integer> alertQuotaIdList =
-                alertQuotaList.stream().map(ClusterAlertQuota::getAlertGroupId).collect(Collectors.toSet());
-        Collection<AlertGroupEntity> alertGroupEntityList = alertGroupService.listByIds(alertQuotaIdList);
-        if (CollectionUtils.isNotEmpty(alertGroupEntityList)) {
-            Map<Integer, AlertGroupEntity> idMap = alertGroupEntityList.stream()
-                    .collect(Collectors.toMap(AlertGroupEntity::getId, a -> a, (a1, a2) -> a1));
-            alertQuotaList.forEach(a -> {
-                AlertGroupEntity alertGroupEntity = idMap.get(a.getAlertGroupId());
-                if (Objects.nonNull(alertGroupEntity)) {
-                    a.setAlertGroupName(alertGroupEntity.getAlertGroupName());
-                }
-                a.setQuotaStateCode(a.getQuotaState().getValue());
-            });
-        }
+
+        fillAlertGroupInfo(alertQuotaList);
         return Result.success(alertQuotaList).put(Constants.TOTAL, count);
     }
-    
-    private void alertRuleFile(Integer clusterId, Collection<ClusterAlertQuota> alertQuotaList) {
-        HashMap<String, List<ClusterAlertQuota>> map = new HashMap<>();
-        for (ClusterAlertQuota alertQuota : alertQuotaList) {
-            if (!map.containsKey(alertQuota.getServiceCategory())) {
-                // list all started alert quota
-                List<ClusterAlertQuota> quotaList = this.lambdaQuery()
-                        .eq(ClusterAlertQuota::getServiceCategory, alertQuota.getServiceCategory())
-                        .eq(ClusterAlertQuota::getQuotaState, QuotaState.RUNNING)
-                        .list();
-                quotaList.add(alertQuota);
-                map.put(alertQuota.getServiceCategory(), quotaList);
-            } else {
-                List<ClusterAlertQuota> quotaList = map.get(alertQuota.getServiceCategory());
-                
-                quotaList.add(alertQuota);
-            }
-            alertQuota.setQuotaState(QuotaState.RUNNING);
-        }
-        
-        if (alertQuotaList.size() > 0) {
-            logger.info("start alert size is {}", alertQuotaList.size());
-            this.updateBatchById(alertQuotaList);
-        }
-        HashMap<Generators, List<AlertItem>> configFileMap = new HashMap<>();
-        for (Map.Entry<String, List<ClusterAlertQuota>> entry : map.entrySet()) {
-            String category = entry.getKey();
-            List<ClusterAlertQuota> alerts = entry.getValue();
-            // alerts duplicate removal
-            List<ClusterAlertQuota> alertList = alerts.stream()
-                    .collect(Collectors.collectingAndThen(Collectors.toCollection(
-                            () -> new TreeSet<>(Comparator.comparing(ClusterAlertQuota::getAlertQuotaName))),
-                            ArrayList::new));
-            
-            Generators generators = new Generators();
-            generators.setFilename(category.toLowerCase() + ".yml");
-            generators.setConfigFormat("prometheus");
-            generators.setOutputDirectory("alert_rules");
-            ArrayList<AlertItem> alertItems = new ArrayList<>();
-            for (ClusterAlertQuota clusterAlertQuota : alertList) {
-                AlertItem alertItem = new AlertItem();
-                alertItem.setAlertName(clusterAlertQuota.getAlertQuotaName());
-                alertItem.setAlertExpr(clusterAlertQuota.getAlertExpr() + " " + clusterAlertQuota.getCompareMethod()
-                        + " " + clusterAlertQuota.getAlertThreshold());
-                alertItem.setClusterId(clusterId);
-                alertItem.setServiceRoleName(clusterAlertQuota.getServiceRoleName());
-                alertItem.setAlertLevel(clusterAlertQuota.getAlertLevel().getDesc());
-                alertItem.setAlertAdvice(clusterAlertQuota.getAlertAdvice());
-                alertItem.setTriggerDuration(clusterAlertQuota.getTriggerDuration());
-                alertItems.add(alertItem);
-            }
-            configFileMap.put(generators, alertItems);
-        }
-        ActorRef prometheusActor =
-                ActorUtils.getLocalActor(PrometheusActor.class, ActorUtils.getActorRefName(PrometheusActor.class));
-        GenerateAlertConfigCommand alertConfigCommand = new GenerateAlertConfigCommand();
-        alertConfigCommand.setClusterId(clusterId);
-        alertConfigCommand.setConfigFileMap(configFileMap);
-        prometheusActor.tell(alertConfigCommand, ActorRef.noSender());
-    }
-    
-    @Override
-    public void start(Integer clusterId, String alertQuotaIds) {
-        List<String> ids = Arrays.asList(alertQuotaIds.split(","));
-        if (CollUtil.isEmpty(ids)) {
-            return;
-        }
-        
-        Collection<ClusterAlertQuota> alertQuotaList = this.listByIds(ids);
-        
-        alertRuleFile(clusterId, alertQuotaList);
-    }
-    
+
     @Transactional(rollbackFor = Exception.class)
     @Override
-    public void stop(Integer clusterId, String alertQuotaIds) {
-        List<String> ids = Arrays.asList(alertQuotaIds.split(StrUtil.COMMA));
-        if (CollUtil.isEmpty(ids)) {
-            return;
+    public Result start(Integer clusterId, String alertQuotaIds) {
+        List<String> ids = parseAlertQuotaIds(alertQuotaIds);
+        if (ids == null) {
+            return Result.error("告警指标ID不能为空");
         }
-        
-        Set<String> categories = new HashSet<>(ids.size());
-        // 1、修改禁用状态 & 更新
+
         Collection<ClusterAlertQuota> alertQuotas = this.listByIds(ids);
-        alertQuotas.forEach(q -> {
-            q.setQuotaState(QuotaState.STOPPED);
-            categories.add(q.getServiceCategory());
-        });
-        this.updateBatchById(alertQuotas);
-        
-        // 2、查询需要重新生成 alert rule file 的告警指标
-        Collection<ClusterAlertQuota> clusterAlertQuotas = this.lambdaQuery()
-                .eq(ClusterAlertQuota::getQuotaState, QuotaState.RUNNING)
-                .in(ClusterAlertQuota::getServiceCategory, categories)
-                .list();
-        if (CollUtil.isEmpty(clusterAlertQuotas)) {
-            return;
+        if (alertQuotas == null || alertQuotas.isEmpty()) {
+            return Result.error("未找到对应的告警指标");
         }
-        
-        alertRuleFile(clusterId, clusterAlertQuotas);
+
+        // 1. Update state to RUNNING
+        Set<String> affectedCategories = new HashSet<>();
+        for (ClusterAlertQuota quota : alertQuotas) {
+            quota.setQuotaState(QuotaState.RUNNING);
+            affectedCategories.add(quota.getServiceCategory());
+        }
+        this.updateBatchById(alertQuotas);
+        logger.info("Started {} alert quota(s), affected categories: {}", alertQuotas.size(), affectedCategories);
+
+        // 2. Collect all running quotas in affected categories and dispatch
+        Map<String, List<ClusterAlertQuota>> quotasByCategory =
+                collectRunningQuotasByCategories(affectedCategories);
+        alertRuleConfigHelper.buildAndDispatch(clusterId, quotasByCategory);
+
+        return Result.success();
     }
-    
+
+    @Transactional(rollbackFor = Exception.class)
     @Override
-    public void saveAlertQuota(ClusterAlertQuota clusterAlertQuota) {
+    public Result stop(Integer clusterId, String alertQuotaIds) {
+        List<String> ids = parseAlertQuotaIds(alertQuotaIds);
+        if (ids == null) {
+            return Result.error("告警指标ID不能为空");
+        }
+
+        Collection<ClusterAlertQuota> alertQuotas = this.listByIds(ids);
+        if (alertQuotas == null || alertQuotas.isEmpty()) {
+            return Result.error("未找到对应的告警指标");
+        }
+
+        // 1. Update state to STOPPED
+        Set<String> affectedCategories = new HashSet<>();
+        for (ClusterAlertQuota quota : alertQuotas) {
+            quota.setQuotaState(QuotaState.STOPPED);
+            affectedCategories.add(quota.getServiceCategory());
+        }
+        this.updateBatchById(alertQuotas);
+        logger.info("Stopped {} alert quota(s), affected categories: {}", alertQuotas.size(), affectedCategories);
+
+        // 2. Collect remaining running quotas and regenerate rule files
+        Map<String, List<ClusterAlertQuota>> quotasByCategory =
+                collectRunningQuotasByCategories(affectedCategories);
+        if (quotasByCategory.isEmpty()) {
+            return Result.success();
+        }
+        alertRuleConfigHelper.buildAndDispatch(clusterId, quotasByCategory);
+
+        return Result.success();
+    }
+
+    @Override
+    public Result saveAlertQuota(ClusterAlertQuota clusterAlertQuota) {
+        if (clusterAlertQuota.getAlertGroupId() == null) {
+            return Result.error("告警组不能为空");
+        }
+
+        AlertGroupEntity alertGroupEntity = alertGroupService.getById(clusterAlertQuota.getAlertGroupId());
+        if (alertGroupEntity == null) {
+            return Result.error("告警组不存在");
+        }
+
+        // Check duplicate name within the same alert group
+        if (StringUtils.isNotBlank(clusterAlertQuota.getAlertQuotaName())) {
+            Integer existCount = this.lambdaQuery()
+                    .eq(ClusterAlertQuota::getAlertGroupId, clusterAlertQuota.getAlertGroupId())
+                    .eq(ClusterAlertQuota::getAlertQuotaName, clusterAlertQuota.getAlertQuotaName())
+                    .count();
+            if (existCount != null && existCount > 0) {
+                return Result.error("同一告警组下告警指标名称不能重复");
+            }
+        }
+
         clusterAlertQuota.setQuotaState(QuotaState.STOPPED);
         clusterAlertQuota.setCreateTime(new Date());
-        AlertGroupEntity alertGroupEntity = alertGroupService.getById(clusterAlertQuota.getAlertGroupId());
         clusterAlertQuota.setServiceCategory(alertGroupEntity.getAlertGroupCategory());
         this.save(clusterAlertQuota);
+        return Result.success();
     }
-    
+
+    @Override
+    public Result updateAlertQuota(ClusterAlertQuota clusterAlertQuota) {
+        if (clusterAlertQuota.getId() == null) {
+            return Result.error("告警指标ID不能为空");
+        }
+
+        ClusterAlertQuota existing = this.getById(clusterAlertQuota.getId());
+        if (existing == null) {
+            return Result.error("告警指标不存在");
+        }
+
+        // Check duplicate name if name is being changed
+        if (StringUtils.isNotBlank(clusterAlertQuota.getAlertQuotaName())
+                && !clusterAlertQuota.getAlertQuotaName().equals(existing.getAlertQuotaName())) {
+            Integer groupId = clusterAlertQuota.getAlertGroupId() != null
+                    ? clusterAlertQuota.getAlertGroupId()
+                    : existing.getAlertGroupId();
+            Integer existCount = this.lambdaQuery()
+                    .eq(ClusterAlertQuota::getAlertGroupId, groupId)
+                    .eq(ClusterAlertQuota::getAlertQuotaName, clusterAlertQuota.getAlertQuotaName())
+                    .ne(ClusterAlertQuota::getId, clusterAlertQuota.getId())
+                    .count();
+            if (existCount != null && existCount > 0) {
+                return Result.error("同一告警组下告警指标名称不能重复");
+            }
+        }
+
+        clusterAlertQuota.setQuotaState(QuotaState.WAIT_TO_UPDATE);
+        this.updateById(clusterAlertQuota);
+        return Result.success();
+    }
+
     @Override
     public List<ClusterAlertQuota> listAlertQuotaByServiceName(String serviceName) {
         return this.list(new QueryWrapper<ClusterAlertQuota>().eq(Constants.SERVICE_CATEGORY, serviceName));
+    }
+
+    // ======================== Private Helpers ========================
+
+    /**
+     * Parse and validate comma-separated alert quota IDs.
+     *
+     * @return parsed ID list, or null if input is invalid
+     */
+    private List<String> parseAlertQuotaIds(String alertQuotaIds) {
+        if (StringUtils.isBlank(alertQuotaIds)) {
+            return null;
+        }
+        List<String> ids = Arrays.stream(alertQuotaIds.split(","))
+                .map(String::trim)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toList());
+        return ids.isEmpty() ? null : ids;
+    }
+
+    /**
+     * Enrich quota list with alert group names and quotaStateCode.
+     */
+    private void fillAlertGroupInfo(List<ClusterAlertQuota> alertQuotaList) {
+        Set<Integer> alertGroupIdSet =
+                alertQuotaList.stream().map(ClusterAlertQuota::getAlertGroupId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+
+        Map<Integer, AlertGroupEntity> groupMap;
+        if (!alertGroupIdSet.isEmpty()) {
+            Collection<AlertGroupEntity> groups = alertGroupService.listByIds(alertGroupIdSet);
+            groupMap = groups.stream()
+                    .collect(Collectors.toMap(AlertGroupEntity::getId, g -> g, (a, b) -> a));
+        } else {
+            groupMap = java.util.Collections.emptyMap();
+        }
+
+        for (ClusterAlertQuota quota : alertQuotaList) {
+            AlertGroupEntity group = groupMap.get(quota.getAlertGroupId());
+            if (group != null) {
+                quota.setAlertGroupName(group.getAlertGroupName());
+            }
+            quota.setQuotaStateCode(quota.getQuotaState().getValue());
+        }
+    }
+
+    /**
+     * Query all RUNNING quotas in the given categories, deduplicate by name per category,
+     * and return grouped by serviceCategory.
+     */
+    private Map<String, List<ClusterAlertQuota>> collectRunningQuotasByCategories(Set<String> categories) {
+        if (categories == null || categories.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+
+        List<ClusterAlertQuota> runningQuotas = this.lambdaQuery()
+                .eq(ClusterAlertQuota::getQuotaState, QuotaState.RUNNING)
+                .in(ClusterAlertQuota::getServiceCategory, categories)
+                .list();
+
+        if (runningQuotas == null || runningQuotas.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+
+        // Group by category and deduplicate by alertQuotaName within each category
+        return runningQuotas.stream()
+                .collect(Collectors.groupingBy(ClusterAlertQuota::getServiceCategory))
+                .entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> entry.getValue().stream()
+                                .collect(Collectors.collectingAndThen(
+                                        Collectors.toCollection(
+                                                () -> new TreeSet<>(Comparator.comparing(
+                                                        ClusterAlertQuota::getAlertQuotaName))),
+                                        ArrayList::new))));
     }
 }
