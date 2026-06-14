@@ -1,0 +1,459 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~  Licensed to the Apache Software Foundation (ASF) under one or more
+  ~  contributor license agreements.  See the NOTICE file distributed with
+  ~  this work for additional information regarding copyright ownership.
+  ~  The ASF licenses this file to You under the Apache License, Version 2.0
+  ~  (the "License"); you may not use this file except in compliance with
+  ~  the License.  You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~  Unless required by applicable law or agreed to in writing, software
+  ~  distributed under the License is distributed on an "AS IS" BASIS,
+  ~  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~  See the License for the specific language governing permissions and
+  ~  limitations under the License.
+  -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.datasophon</groupId>
+    <artifactId>datasophon</artifactId>
+    <version>${revision}</version>
+    <packaging>pom</packaging>
+    <description>It is committed to rapidly implementing the deployment, management, monitoring and automatic operation
+        and maintenance of the big data cloud native platform, helping you quickly build a stable, efficient, elastic
+        and scalable big data cloud native platform.</description>
+    <modules>
+        <module>datasophon-api</module>
+        <module>datasophon-infrastructure</module>
+        <module>datasophon-common</module>
+        <module>datasophon-worker</module>
+        <module>datasophon-ui</module>
+        <module>datasophon-service</module>
+        <module>datasophon-domain</module>
+    </modules>
+
+    <properties>
+        <revision>1.2.1</revision>
+        <akka.version>2.4.20</akka.version>
+        <commons.httpclient>3.0.1</commons.httpclient>
+        <commons.lang>3.12.0</commons.lang>
+        <druid.version>1.1.14</druid.version>
+        <fastjson.version>1.2.83</fastjson.version>
+        <hutool.version>5.8.9</hutool.version>
+        <java.version>1.8</java.version>
+        <junit.version>4.12</junit.version>
+        <logback.version>1.2.9</logback.version>
+        <maven-checkstyle-plugin.version>3.1.2</maven-checkstyle-plugin.version>
+        <maven-compiler-plugin.version>3.10.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.0.0-M5</maven-surefire-plugin.version>
+        <mybatis-plus.version>3.2.0</mybatis-plus.version>
+        <mybatis.spring.version>2.0.1</mybatis.spring.version>
+        <mybatis-plus-join>1.2.0</mybatis-plus-join>
+        <mysql.connector.version>8.0.28</mysql.connector.version>
+        <org.apache.sshd.version>2.9.2</org.apache.sshd.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <spring.boot.version>2.6.1</spring.boot.version>
+        <spring.version>5.3.13</spring.version>
+        <versions-maven-plugin.version>2.14.2</versions-maven-plugin.version>
+        <flyway.version>9.20.0</flyway.version>
+        <h2.version>2.1.214</h2.version>
+        <lombok.version>1.18.24</lombok.version>
+        <guava.version>31.1-jre</guava.version>
+        <junit.version>5.9.0</junit.version>
+        <org.freemarker.verion>2.3.30</org.freemarker.verion>
+        <commons-codec.version>1.15</commons-codec.version>
+        <commons-compress.version>1.21</commons-compress.version>
+        <jackson-annotations.version>2.13.0</jackson-annotations.version>
+        <ant.version>1.10.12</ant.version>
+        <jsch.version>0.2.7</jsch.version>
+        <commons-collections.version>3.2.2</commons-collections.version>
+        <eddsa.version>0.3.0</eddsa.version>
+        <mockito-core.version>2.23.4</mockito-core.version>
+        <spotless.version>2.27.2</spotless.version>
+        <spotless.scalafmt.version>3.4.3</spotless.scalafmt.version>
+        <spotless.ratchetFrom>origin/dev</spotless.ratchetFrom>
+        <mockito-junit-jupiter.version>4.5.1</mockito-junit-jupiter.version>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-parent</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>mysql</groupId>
+                <artifactId>mysql-connector-java</artifactId>
+                <version>${mysql.connector.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-boot-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>icu.mhb</groupId>
+                <artifactId>mybatis-plus-join</artifactId>
+                <version>${mybatis-plus-join}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>fastjson</artifactId>
+                <version>${fastjson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>druid</artifactId>
+                <version>${druid.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons.lang}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-httpclient</groupId>
+                <artifactId>commons-httpclient</artifactId>
+                <version>${commons.httpclient}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.typesafe.akka</groupId>
+                <artifactId>akka-actor_2.11</artifactId>
+                <version>${akka.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.typesafe.akka</groupId>
+                <artifactId>akka-remote_2.11</artifactId>
+                <version>${akka.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.typesafe.akka</groupId>
+                <artifactId>akka-slf4j_2.11</artifactId>
+                <version>${akka.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.typesafe.akka</groupId>
+                <artifactId>akka-persistence_2.11</artifactId>
+                <version>${akka.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${logback.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.hutool</groupId>
+                <artifactId>hutool-all</artifactId>
+                <version>${hutool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.sshd</groupId>
+                <artifactId>sshd-core</artifactId>
+                <version>${org.apache.sshd.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.sshd</groupId>
+                <artifactId>sshd-sftp</artifactId>
+                <version>${org.apache.sshd.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-codec</groupId>
+                <artifactId>commons-codec</artifactId>
+                <version>${commons-codec.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.freemarker</groupId>
+                <artifactId>freemarker</artifactId>
+                <version>${org.freemarker.verion}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>${commons-compress.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson-annotations.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.ant</groupId>
+                <artifactId>ant</artifactId>
+                <version>${ant.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.mwiede</groupId>
+                <artifactId>jsch</artifactId>
+                <version>${jsch.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-collections</groupId>
+                <artifactId>commons-collections</artifactId>
+                <version>${commons-collections.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.i2p.crypto</groupId>
+                <artifactId>eddsa</artifactId>
+                <version>${eddsa.version}</version>
+            </dependency>
+
+            <!-- test -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${mockito-core.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-junit-jupiter</artifactId>
+                <version>${mockito-junit-jupiter.version}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>2.22.2</version>
+                <configuration>
+                    <skipTests>true</skipTests>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.6.2</version>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.2.1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                        <phase>package</phase>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>versions-maven-plugin</artifactId>
+                <version>${versions-maven-plugin.version}</version>
+            </plugin>
+
+            <!--            <plugin>-->
+            <!--                <groupId>org.codehaus.mojo</groupId>-->
+            <!--                <artifactId>flatten-maven-plugin</artifactId>-->
+            <!--                <version>1.5.0</version>-->
+            <!--                <configuration>-->
+            <!--                    <updatePomFile>true</updatePomFile>-->
+            <!--                    <flattenMode>resolveCiFriendliesOnly</flattenMode>-->
+            <!--                </configuration>-->
+            <!--                <executions>-->
+            <!--                    <execution>-->
+            <!--                        <id>flatten</id>-->
+            <!--                        <phase>process-resources</phase>-->
+            <!--                        <goals>-->
+            <!--                            <goal>flatten</goal>-->
+            <!--                        </goals>-->
+            <!--                    </execution>-->
+            <!--                    <execution>-->
+            <!--                        <id>flatten.clean</id>-->
+            <!--                        <phase>clean</phase>-->
+            <!--                        <goals>-->
+            <!--                            <goal>clean</goal>-->
+            <!--                        </goals>-->
+            <!--                    </execution>-->
+            <!--                </executions>-->
+            <!--            </plugin>-->
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>${maven-checkstyle-plugin.version}</version>
+                <configuration>
+                    <configLocation>/style/checkstyle.xml</configLocation>
+                    <suppressionsLocation>/style/checkstyle-suppressions.xml</suppressionsLocation>
+                    <inputEncoding>UTF-8</inputEncoding>
+                    <outputEncoding>UTF-8</outputEncoding>
+                    <consoleOutput>true</consoleOutput>
+                    <includeTestSourceDirectory>false</includeTestSourceDirectory>
+                    <failOnViolation>true</failOnViolation>
+                    <sourceDirectories>
+                        <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
+                        <sourceDirectory>${project.build.testSourceDirectory}</sourceDirectory>
+                    </sourceDirectories>
+                    <resourceIncludes>**/*.properties,
+                        **/*.sh,
+                        **/*.bat,
+                        **/*.yml,
+                        **/*.yaml,
+                        **/*.xml,
+                        **/*.dict</resourceIncludes>
+                    <resourceExcludes>**/.asf.yaml,
+                        **/.github/**,
+                        **/crd/**.yml,
+                        **/crd/**.yaml</resourceExcludes>
+                    <excludes />
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.puppycrawl.tools</groupId>
+                        <artifactId>checkstyle</artifactId>
+                        <version>8.30</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>validate</id>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>process-sources</phase>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <eclipse>
+                            <file>style/spotless_datasophon_formatter.xml</file>
+                        </eclipse>
+                        <removeUnusedImports />
+                        <importOrder>
+                            <file>style/eclipse.importorder</file>
+                        </importOrder>
+                    </java>
+                    <pom>
+                        <sortPom>
+                            <encoding>UTF-8</encoding>
+                            <nrOfIndentSpace>4</nrOfIndentSpace>
+                            <keepBlankLines>true</keepBlankLines>
+                            <indentBlankLines>false</indentBlankLines>
+                            <indentSchemaLocation>true</indentSchemaLocation>
+                            <spaceBeforeCloseEmptyElement>true</spaceBeforeCloseEmptyElement>
+                            <sortModules>false</sortModules>
+                            <sortExecutions>false</sortExecutions>
+                            <predefinedSortOrder>custom_1</predefinedSortOrder>
+                            <expandEmptyElements>false</expandEmptyElements>
+                            <sortProperties>false</sortProperties>
+                        </sortPom>
+                        <replace>
+                            <name>Leading blank line</name>
+                            <search>project</search>
+                            <replacement>project</replacement>
+                        </replace>
+                    </pom>
+                    <!--<markdown>
+                        <includes>
+                            <include>docs/**/*.md</include>
+                        </includes>
+                        <excludes>
+                            <exclude>**/.github/**/*.md</exclude>
+                        </excludes>
+                        <flexmark />
+                    </markdown>-->
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>compile</phase>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <url>https://datasophon.github.io/datasophon-website/</url>
+    <inceptionYear>2022</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>The Apache Software License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>git@github.com:datasophon/datasophon.git</connection>
+        <url>https://github.com/datasophon/datasophon</url>
+    </scm>
+    <profiles>
+        <profile>
+            <id>google-mirror</id>
+            <properties>
+                <mavenCentralId>gcs-maven-central-mirror</mavenCentralId>
+                <mavenCentralName>GCS Maven Central mirror</mavenCentralName>
+                <mavenCentralUrl>https://maven-central.storage-download.googleapis.com/maven2</mavenCentralUrl>
+            </properties>
+        </profile>
+    </profiles>
+</project>

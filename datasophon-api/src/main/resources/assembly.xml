@@ -1,0 +1,189 @@
+<!--
+  ~  Licensed to the Apache Software Foundation (ASF) under one or more
+  ~  contributor license agreements.  See the NOTICE file distributed with
+  ~  this work for additional information regarding copyright ownership.
+  ~  The ASF licenses this file to You under the Apache License, Version 2.0
+  ~  (the "License"); you may not use this file except in compliance with
+  ~  the License.  You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~  Unless required by applicable law or agreed to in writing, software
+  ~  distributed under the License is distributed on an "AS IS" BASIS,
+  ~  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~  See the License for the specific language governing permissions and
+  ~  limitations under the License.
+  -->
+
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.0.0 http://maven.apache.org/xsd/assembly-2.0.0.xsd">
+
+    <id>package</id>
+    <formats>
+        <format>tar.gz</format>
+    </formats>
+    <includeBaseDirectory>true</includeBaseDirectory>
+    <dependencySets>
+        <dependencySet>
+            <useProjectArtifact>true</useProjectArtifact>
+            <outputDirectory>lib</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0755</fileMode>
+            <excludes>
+                <!-- 排除该包，否则多个日志框架导致无法直接启动，需要手动删除 -->
+                <exclude>*:log4j</exclude>
+                <exclude>*:slf4j-log4j12</exclude>
+            </excludes>
+        </dependencySet>
+    </dependencySets>
+    <fileSets>
+        <!--拷贝application.yml文件到jar包的外部conf目录下面-->
+        <fileSet>
+            <directory>${basedir}/../datasophon-api/src/main/resources</directory>
+            <includes>
+                <include>logback-api.xml</include>
+                <include>application.conf</include>
+            </includes>
+            <outputDirectory>conf</outputDirectory>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../</directory>
+            <includes>
+                <include>LICENSE</include>
+                <include>README.md</include>
+            </includes>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../datasophon-common/src/main/resources</directory>
+            <includes>
+                <include>**/*.properties</include>
+                <include>**/*.xml</include>
+            </includes>
+            <outputDirectory>conf</outputDirectory>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../datasophon-infrastructure/src/main/resources</directory>
+            <includes>
+                <include>**/*.properties</include>
+                <include>**/*.xml</include>
+            </includes>
+            <outputDirectory>conf</outputDirectory>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../datasophon-infrastructure/src/main/resources/mapper</directory>
+            <includes>
+                <include>**/*.xml</include>
+            </includes>
+            <outputDirectory>conf/mapper</outputDirectory>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <!--拷贝start.sh启动脚本文件到bin目录下面-->
+        <fileSet>
+            <directory>${basedir}/../bin</directory>
+            <includes>
+                <include>*.sh</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <directoryMode>0755</directoryMode>
+            <filtered>true</filtered>
+            <outputDirectory>bin</outputDirectory>
+            <!-- Linux 脚本，需要打包为 unix 格式，否则换行可能有问题 -->
+            <lineEnding>unix</lineEnding>
+        </fileSet>
+        <!--拷贝脚本文件到scripts目录下面-->
+        <fileSet>
+            <directory>${basedir}/../scripts</directory>
+            <includes>
+                <include>*.sh</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <directoryMode>0755</directoryMode>
+            <filtered>true</filtered>
+            <outputDirectory>scripts</outputDirectory>
+            <!-- Linux 脚本，需要打包为 unix 格式，否则换行可能有问题 -->
+            <lineEnding>unix</lineEnding>
+        </fileSet>
+
+
+        <fileSet>
+            <directory>${basedir}/../datasophon-api/src/main/resources/meta</directory>
+            <outputDirectory>conf/meta</outputDirectory>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../jmx</directory>
+            <outputDirectory>/jmx</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../datasophon-ui/dist</directory>
+            <outputDirectory>/conf/front/views</outputDirectory>
+            <includes>
+                <include>*.html</include>
+                <include>*.ico</include>
+                <include>*.js</include>
+            </includes>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../datasophon-ui/dist</directory>
+            <outputDirectory>/conf/front/static/resources/bundle-main</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0755</fileMode>
+            <includes>
+                <include>css/**</include>
+                <include>static/**</include>
+            </includes>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../conf</directory>
+            <outputDirectory>/conf</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0755</fileMode>
+            <includes>
+                <include>**</include>
+            </includes>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/src/main/resources/db/migration</directory>
+            <outputDirectory>/conf/db/migration</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0755</fileMode>
+            <includes>
+                <include>**</include>
+            </includes>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../deploy/docker</directory>
+            <includes>
+                <include>Dockerfile</include>
+            </includes>
+            <outputDirectory>/</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../deploy/compose</directory>
+            <includes>
+                <include>**</include>
+            </includes>
+            <outputDirectory>/bin/compose</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../datasophon-init/</directory>
+            <includes>
+                <include>**/*.*</include>
+            </includes>
+            <outputDirectory>datasophon-init</outputDirectory>
+            <fileMode>0755</fileMode>
+            <lineEnding>unix</lineEnding>
+        </fileSet>
+    </fileSets>
+</assembly>

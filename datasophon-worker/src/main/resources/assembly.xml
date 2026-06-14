@@ -1,0 +1,154 @@
+<!--
+  ~  Licensed to the Apache Software Foundation (ASF) under one or more
+  ~  contributor license agreements.  See the NOTICE file distributed with
+  ~  this work for additional information regarding copyright ownership.
+  ~  The ASF licenses this file to You under the Apache License, Version 2.0
+  ~  (the "License"); you may not use this file except in compliance with
+  ~  the License.  You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~  Unless required by applicable law or agreed to in writing, software
+  ~  distributed under the License is distributed on an "AS IS" BASIS,
+  ~  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~  See the License for the specific language governing permissions and
+  ~  limitations under the License.
+  -->
+
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.0.0 http://maven.apache.org/xsd/assembly-2.0.0.xsd">
+
+    <id>package</id>
+    <formats>
+        <format>tar.gz</format>
+    </formats>
+    <includeBaseDirectory>true</includeBaseDirectory>
+    <dependencySets>
+        <dependencySet>
+            <useProjectArtifact>true</useProjectArtifact>
+            <outputDirectory>lib</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0755</fileMode>
+            <excludes>
+                <!-- 排除该包，否则有多个日志框架导致无法直接启动，需要手动删除 -->
+                <exclude>*:log4j</exclude>
+                <exclude>*:slf4j-log4j12</exclude>
+            </excludes>
+        </dependencySet>
+    </dependencySets>
+    <fileSets>
+        <!--拷贝application.yml文件到jar包的外部conf目录下面-->
+        <fileSet>
+            <directory>${basedir}/../datasophon-worker/src/main/resources</directory>
+            <includes>
+                <include>**/*.yml</include>
+                <include>**/logback.xml</include>
+                <include>**/*.conf</include>
+                <include>**/*.properties</include>
+            </includes>
+            <outputDirectory>conf</outputDirectory>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../datasophon-worker/src/main/resources/templates</directory>
+            <includes>
+                <include>**/*.ftl</include>
+                <include>**/*.yml</include>
+            </includes>
+            <outputDirectory>conf/templates</outputDirectory>
+            <lineEnding>unix</lineEnding>
+        </fileSet>
+        <fileSet>
+            <directory>${basedir}/../datasophon-common/src/main/resources</directory>
+            <includes>
+                <include>**/*.properties</include>
+                <include>**/*.xml</include>
+            </includes>
+            <outputDirectory>conf</outputDirectory>
+        </fileSet>
+
+        <!--拷贝start.sh启动脚本文件到bin目录下面-->
+        <fileSet>
+            <directory>${basedir}/src/main/resources</directory>
+            <includes>
+                <include>*.sh</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <filtered>true</filtered>
+            <outputDirectory>bin</outputDirectory>
+            <lineEnding>unix</lineEnding>
+        </fileSet>
+        <!--拷贝script目录下操作系统文件到script目录下面-->
+        <fileSet>
+            <directory>${basedir}/src/main/resources/script</directory>
+            <includes>
+                <include>profile</include>
+                <include>datasophon-worker</include>
+                <include>bd_ca_cert</include>
+                <include>bd_ca_key</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <filtered>true</filtered>
+            <lineEnding>unix</lineEnding>
+            <outputDirectory>script</outputDirectory>
+        </fileSet>
+        <!--拷贝script目录下的脚本文件到script目录下面-->
+        <fileSet>
+            <directory>${basedir}/src/main/resources/script</directory>
+            <includes>
+                <include>*.sh</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <filtered>true</filtered>
+            <lineEnding>unix</lineEnding>
+            <outputDirectory>script</outputDirectory>
+        </fileSet>
+
+
+        <fileSet>
+            <directory>${basedir}/src/main/resources/jmx</directory>
+            <outputDirectory>jmx</outputDirectory>
+        </fileSet>
+
+        <fileSet>
+            <directory>${basedir}/src/main/resources/node/x86</directory>
+            <includes>
+                <include>node_exporter</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <outputDirectory>node/x86</outputDirectory>
+        </fileSet>
+
+        <fileSet>
+            <directory>${basedir}/src/main/resources/node/arm</directory>
+            <includes>
+                <include>node_exporter</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <outputDirectory>node/arm</outputDirectory>
+        </fileSet>
+
+        <fileSet>
+            <directory>${basedir}/src/main/resources/node/x86</directory>
+            <includes>
+                <include>*.sh</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <filtered>true</filtered>
+            <lineEnding>unix</lineEnding>
+            <outputDirectory>/node/x86</outputDirectory>
+        </fileSet>
+
+        <fileSet>
+            <directory>${basedir}/src/main/resources/node/arm</directory>
+            <includes>
+                <include>*.sh</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <filtered>true</filtered>
+            <lineEnding>unix</lineEnding>
+            <outputDirectory>/node/arm</outputDirectory>
+        </fileSet>
+    </fileSets>
+</assembly>
