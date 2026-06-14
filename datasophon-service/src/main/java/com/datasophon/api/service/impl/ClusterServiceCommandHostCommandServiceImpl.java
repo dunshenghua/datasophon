@@ -23,11 +23,11 @@ import com.datasophon.api.service.ClusterServiceCommandHostCommandService;
 import com.datasophon.api.service.ClusterServiceCommandService;
 import com.datasophon.api.service.FrameServiceRoleService;
 import com.datasophon.api.service.FrameServiceService;
+import com.datasophon.api.utils.PageUtils;
 import com.datasophon.common.Constants;
 import com.datasophon.common.command.GetLogCommand;
 import com.datasophon.common.utils.ExecResult;
 import com.datasophon.common.utils.Result;
-import com.datasophon.dao.entity.ClusterInfoEntity;
 import com.datasophon.dao.entity.ClusterServiceCommandEntity;
 import com.datasophon.dao.entity.ClusterServiceCommandHostCommandEntity;
 import com.datasophon.dao.enums.CommandState;
@@ -79,18 +79,11 @@ public class ClusterServiceCommandHostCommandServiceImpl
     
     @Override
     public Result getHostCommandList(String hostname, String commandHostId, Integer page, Integer pageSize) {
-        Integer offset = (page - 1) * pageSize;
-        List<ClusterServiceCommandHostCommandEntity> list =
-                this.list(new QueryWrapper<ClusterServiceCommandHostCommandEntity>()
+        QueryWrapper<ClusterServiceCommandHostCommandEntity> wrapper =
+                new QueryWrapper<ClusterServiceCommandHostCommandEntity>()
                         .eq(Constants.COMMAND_HOST_ID, commandHostId)
-                        .orderByDesc(Constants.CREATE_TIME)
-                        .last("limit " + offset + "," + pageSize));
-        int total = this.count(new QueryWrapper<ClusterServiceCommandHostCommandEntity>()
-                .eq(Constants.COMMAND_HOST_ID, commandHostId));
-        for (ClusterServiceCommandHostCommandEntity hostCommandEntity : list) {
-            hostCommandEntity.setCommandStateCode(hostCommandEntity.getCommandState().getValue());
-        }
-        return Result.success(list).put(Constants.TOTAL, total);
+                        .orderByDesc(Constants.CREATE_TIME);
+        return PageUtils.paginate(this, wrapper, page, pageSize, PageUtils::enrichHostCommandEntity);
     }
     
     @Override
@@ -124,31 +117,42 @@ public class ClusterServiceCommandHostCommandServiceImpl
     
     @Override
     public Result getHostCommandLog(Integer clusterId, String hostCommandId) throws Exception {
-        ClusterInfoEntity clusterInfo = clusterInfoService.getById(clusterId);
-        
         ClusterServiceCommandHostCommandEntity hostCommand =
                 this.getOne(new QueryWrapper<ClusterServiceCommandHostCommandEntity>().eq(Constants.HOST_COMMAND_ID,
                         hostCommandId));
-        
+        if (hostCommand == null) {
+            return Result.error("Host command not found: " + hostCommandId);
+        }
+
         ClusterServiceCommandEntity commandEntity = commandService.getCommandById(hostCommand.getCommandId());
-        
+        if (commandEntity == null) {
+            return Result.error("Parent command not found: " + hostCommand.getCommandId());
+        }
+
         String serviceName = commandEntity.getServiceName();
         String serviceRoleName = hostCommand.getServiceRoleName();
         String logFile = String.format("%s/%s/%s.log", "logs", serviceName, serviceRoleName);
-        
+
         GetLogCommand command = new GetLogCommand();
         command.setLogFile(logFile);
         command.setDecompressPackageName("datasophon-worker");
         logger.info("Start to get {} install log from host {}", serviceRoleName, hostCommand.getHostname());
-        ActorSelection configActor = ActorUtils.actorSystem
-                .actorSelection("akka.tcp://datasophon@" + hostCommand.getHostname() + ":2552/user/worker/logActor");
-        Timeout timeout = new Timeout(Duration.create(60, TimeUnit.SECONDS));
-        Future<Object> logFuture = Patterns.ask(configActor, command, timeout);
-        ExecResult logResult = (ExecResult) Await.result(logFuture, timeout.duration());
-        if (Objects.nonNull(logResult) && logResult.getExecResult()) {
-            return Result.success(logResult.getExecOut());
+
+        try {
+            ActorSelection configActor = ActorUtils.actorSystem
+                    .actorSelection("akka.tcp://datasophon@" + hostCommand.getHostname()
+                            + ":2552/user/worker/logActor");
+            Timeout timeout = new Timeout(Duration.create(60, TimeUnit.SECONDS));
+            Future<Object> logFuture = Patterns.ask(configActor, command, timeout);
+            ExecResult logResult = (ExecResult) Await.result(logFuture, timeout.duration());
+            if (Objects.nonNull(logResult) && logResult.getExecResult()) {
+                return Result.success(logResult.getExecOut());
+            }
+            return Result.success();
+        } catch (Exception e) {
+            logger.error("Failed to get log from host {} for role {}", hostCommand.getHostname(), serviceRoleName, e);
+            return Result.error("Failed to retrieve log: " + e.getMessage());
         }
-        return Result.success();
     }
     
     @Override

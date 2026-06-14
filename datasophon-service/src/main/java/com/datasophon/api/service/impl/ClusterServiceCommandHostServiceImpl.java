@@ -19,6 +19,7 @@ package com.datasophon.api.service.impl;
 
 import com.datasophon.api.service.ClusterServiceCommandHostCommandService;
 import com.datasophon.api.service.ClusterServiceCommandHostService;
+import com.datasophon.api.utils.PageUtils;
 import com.datasophon.common.Constants;
 import com.datasophon.common.utils.Result;
 import com.datasophon.dao.entity.ClusterServiceCommandHostEntity;
@@ -49,7 +50,7 @@ public class ClusterServiceCommandHostServiceImpl
     @Override
     public Result getCommandHostList(Integer clusterId, String commandId, Integer page, Integer pageSize) {
         Integer offset = (page - 1) * pageSize;
-        
+
         LambdaQueryChainWrapper<ClusterServiceCommandHostEntity> wrapper = this.lambdaQuery()
                 .eq(ClusterServiceCommandHostEntity::getCommandId, commandId);
         int total = wrapper.count();
@@ -57,11 +58,8 @@ public class ClusterServiceCommandHostServiceImpl
                 .orderByDesc(ClusterServiceCommandHostEntity::getCreateTime)
                 .last("limit " + offset + "," + pageSize)
                 .list();
-        for (ClusterServiceCommandHostEntity commandHostEntity : list) {
-            commandHostEntity.setCommandStateCode(commandHostEntity.getCommandState().getValue());
-        }
-        
-        return Result.success(list).put(Constants.TOTAL, total);
+
+        return PageUtils.paginateFromChain(list, total, PageUtils::enrichCommandHostEntity);
     }
     
     @Override

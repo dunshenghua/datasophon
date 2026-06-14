@@ -118,12 +118,10 @@ public class ClusterServiceInstanceServiceImpl
     
     @Override
     public List<ClusterServiceInstanceEntity> listAll(Integer clusterId) {
-        Map<String, String> globalVariables = GlobalVariables.get(clusterId);
         List<ClusterServiceInstanceEntity> list = this.list(new QueryWrapper<ClusterServiceInstanceEntity>()
                 .eq(Constants.CLUSTER_ID, clusterId).orderByAsc(Constants.SORT_NUM));
         for (ClusterServiceInstanceEntity serviceInstance : list) {
             serviceInstance.setServiceStateCode(serviceInstance.getServiceState().getValue());
-            boolean needUpdate = false;
             // 查询dashboard
             ClusterServiceDashboard dashboard = dashboardService.getOne(new QueryWrapper<ClusterServiceDashboard>()
                     .eq(Constants.SERVICE_NAME, serviceInstance.getServiceName()));
@@ -134,63 +132,96 @@ public class ClusterServiceInstanceServiceImpl
             int alertNum = alertHistoryService.count(new QueryWrapper<ClusterAlertHistory>()
                     .eq(Constants.SERVICE_INSTANCE_ID, serviceInstance.getId()).eq(Constants.IS_ENABLED, 1));
             serviceInstance.setAlertNum(alertNum);
-            List<ClusterServiceRoleInstanceEntity> totalRoleList = roleInstanceService.lambdaQuery()
-                    .eq(ClusterServiceRoleInstanceEntity::getServiceId, serviceInstance.getId())
-                    .list();
-            if (Objects.nonNull(totalRoleList) && totalRoleList.isEmpty()) {
-                serviceInstance.setServiceState(ServiceState.WAIT_INSTALL);
-                needUpdate = true;
-            }
-            
-            // 查询停止状态角色
-            List<ClusterServiceRoleInstanceEntity> roleList = roleInstanceService.lambdaQuery()
-                    .eq(ClusterServiceRoleInstanceEntity::getServiceId, serviceInstance.getId())
-                    .eq(ClusterServiceRoleInstanceEntity::getServiceRoleState, ServiceRoleState.STOP)
-                    .list();
-            if (Objects.nonNull(roleList) && !roleList.isEmpty()) {
-                if (!ServiceState.EXISTS_EXCEPTION.equals(serviceInstance.getServiceState())) {
-                    serviceInstance.setServiceState(ServiceState.EXISTS_EXCEPTION);
-                    needUpdate = true;
-                }
-            } else {
-                if (!ServiceState.RUNNING.equals(serviceInstance.getServiceState())
-                        && serviceInstance.getServiceState() != ServiceState.WAIT_INSTALL
-                        && serviceInstance.getServiceState() != ServiceState.EXISTS_ALARM) {
-                    serviceInstance.setServiceState(ServiceState.RUNNING);
-                    needUpdate = true;
-                }
-            }
-            // 查询告警状态角色
-            List<ClusterServiceRoleInstanceEntity> alarmRoleList = roleInstanceService.lambdaQuery()
-                    .eq(ClusterServiceRoleInstanceEntity::getServiceId, serviceInstance.getId())
-                    .eq(ClusterServiceRoleInstanceEntity::getServiceRoleState, ServiceRoleState.EXISTS_ALARM)
-                    .list();
-            if (Objects.nonNull(alarmRoleList) && !alarmRoleList.isEmpty()) {
-                if (!ServiceState.EXISTS_ALARM.equals(serviceInstance.getServiceState())
-                        && !ServiceState.EXISTS_EXCEPTION.equals(serviceInstance.getServiceState())) {
-                    serviceInstance.setServiceState(ServiceState.EXISTS_ALARM);
-                    needUpdate = true;
-                }
-            } else {
-                if (serviceInstance.getServiceState() == ServiceState.EXISTS_ALARM) {
-                    serviceInstance.setServiceState(ServiceState.RUNNING);
-                    needUpdate = true;
-                }
-            }
-            
-            // 查询是否进行了配置更新
-            List<ClusterServiceRoleInstanceEntity> obsoleteRoleList =
-                    roleInstanceService.getObsoleteService(serviceInstance.getId());
-            if (Objects.nonNull(obsoleteRoleList) && obsoleteRoleList.isEmpty()
-                    && serviceInstance.getNeedRestart() == NeedRestart.YES) {
-                serviceInstance.setNeedRestart(NeedRestart.NO);
-                needUpdate = true;
-            }
-            if (needUpdate) {
+
+            // 从角色实例状态推导服务状态和重启标记
+            boolean stateChanged = enrichServiceInstanceState(serviceInstance);
+            if (stateChanged) {
                 this.updateById(serviceInstance);
             }
         }
         return list;
+    }
+
+    /**
+     * Derive service state and needRestart from role instance states.
+     * Returns true if any field was changed (so the caller knows to persist).
+     *
+     * <p>State priority: EXISTS_EXCEPTION > EXISTS_ALARM > RUNNING > WAIT_INSTALL.</p>
+     */
+    private boolean enrichServiceInstanceState(ClusterServiceInstanceEntity serviceInstance) {
+        boolean changed = false;
+        Integer serviceId = serviceInstance.getId();
+
+        List<ClusterServiceRoleInstanceEntity> totalRoleList = roleInstanceService.lambdaQuery()
+                .eq(ClusterServiceRoleInstanceEntity::getServiceId, serviceId)
+                .list();
+        if (Objects.nonNull(totalRoleList) && totalRoleList.isEmpty()) {
+            serviceInstance.setServiceState(ServiceState.WAIT_INSTALL);
+            return true;
+        }
+
+        ServiceState derived = deriveServiceState(serviceId, serviceInstance.getServiceState());
+        if (!derived.equals(serviceInstance.getServiceState())) {
+            serviceInstance.setServiceState(derived);
+            changed = true;
+        }
+
+        NeedRestart derivedRestart = deriveNeedRestart(serviceId, serviceInstance.getNeedRestart());
+        if (!derivedRestart.equals(serviceInstance.getNeedRestart())) {
+            serviceInstance.setNeedRestart(derivedRestart);
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    /**
+     * Compute the aggregate {@link ServiceState} from the states of role instances.
+     *
+     * <p>Priority: EXISTS_EXCEPTION (has stopped roles) > EXISTS_ALARM (has alarm roles) > RUNNING.</p>
+     */
+    private ServiceState deriveServiceState(Integer serviceId, ServiceState current) {
+        boolean hasStopped = roleInstanceService.lambdaQuery()
+                .eq(ClusterServiceRoleInstanceEntity::getServiceId, serviceId)
+                .eq(ClusterServiceRoleInstanceEntity::getServiceRoleState, ServiceRoleState.STOP)
+                .count() > 0;
+        if (hasStopped) {
+            return ServiceState.EXISTS_EXCEPTION;
+        }
+
+        boolean hasAlarm = roleInstanceService.lambdaQuery()
+                .eq(ClusterServiceRoleInstanceEntity::getServiceId, serviceId)
+                .eq(ClusterServiceRoleInstanceEntity::getServiceRoleState, ServiceRoleState.EXISTS_ALARM)
+                .count() > 0;
+        if (hasAlarm) {
+            if (!ServiceState.EXISTS_ALARM.equals(current) && !ServiceState.EXISTS_EXCEPTION.equals(current)) {
+                return ServiceState.EXISTS_ALARM;
+            }
+            return current;
+        }
+
+        // No stopped or alarm roles — converge to RUNNING if not already
+        if (!ServiceState.RUNNING.equals(current)
+                && current != ServiceState.WAIT_INSTALL
+                && current != ServiceState.EXISTS_ALARM) {
+            return ServiceState.RUNNING;
+        }
+        if (current == ServiceState.EXISTS_ALARM) {
+            return ServiceState.RUNNING;
+        }
+        return current;
+    }
+
+    /**
+     * If no obsolete roles remain and the instance still flags NEED_RESTART, clear the flag.
+     */
+    private NeedRestart deriveNeedRestart(Integer serviceId, NeedRestart current) {
+        List<ClusterServiceRoleInstanceEntity> obsoleteRoles =
+                roleInstanceService.getObsoleteService(serviceId);
+        if (Objects.nonNull(obsoleteRoles) && obsoleteRoles.isEmpty() && current == NeedRestart.YES) {
+            return NeedRestart.NO;
+        }
+        return current;
     }
     
     @Override
