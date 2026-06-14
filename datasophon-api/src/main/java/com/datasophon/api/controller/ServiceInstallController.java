@@ -29,6 +29,7 @@ import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -59,10 +60,13 @@ public class ServiceInstallController {
     @RequestMapping("/saveServiceConfig")
     @UserPermission
     public Result saveServiceConfig(Integer clusterId, String serviceName, String serviceConfig, Integer roleGroupId) {
+        if (StringUtils.isBlank(serviceConfig)) {
+            return Result.error("服务配置不能为空");
+        }
         JSONArray jsonArray = JSONArray.parseArray(serviceConfig);
         List<ServiceConfig> list = jsonArray.toJavaList(ServiceConfig.class);
         return serviceInstallService.saveServiceConfig(clusterId, serviceName, list, roleGroupId);
-        
+
     }
     
     /**

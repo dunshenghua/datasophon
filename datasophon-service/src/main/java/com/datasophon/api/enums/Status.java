@@ -90,6 +90,17 @@ public enum Status {
     NO_SERVICE_ROLE_SELECTED(10041, "No service role selected", "未选择需要安装的服务实例"),
     TWO_KYUUBISERVERS_NEED_TO_BE_DEPLOYED(10042, "two kyuubiServer deployments are required", "KyuubiServer需要两个节点"),
     HOST_EXIT_ONE_INSTALLED_ROLE(10043, "at least one role is installed on the host:", "主机上存在未删除的角色:"),
+
+    SERVICE_NAME_IS_NULL(10050, "service name is null", "服务名称不能为空"),
+    CLUSTER_ID_IS_NULL(10051, "cluster id is null", "集群ID不能为空"),
+    SERVICE_CONFIG_LIST_IS_EMPTY(10052, "service config list is empty", "服务配置列表为空"),
+    SERVICE_NOT_FOUND_IN_FRAME(10053, "service {0} not found in frame", "服务在框架中不存在"),
+    ROLE_HOST_MAPPING_LIST_IS_EMPTY(10054, "role host mapping list is empty", "角色主机映射列表为空"),
+    HOST_ROLE_MAPPING_LIST_IS_EMPTY(10055, "host role mapping list is empty", "主机角色映射列表为空"),
+    SERVICE_IDS_IS_NULL(10056, "service ids is null", "服务ID列表为空"),
+    RESOURCE_FILE_NOT_FOUND(10057, "resource file not found", "资源文件不存在"),
+    SERVICE_ROLE_NOT_FOUND(10058, "service role not found", "服务角色不存在"),
+    ROLE_GROUP_NOT_FOUND(10059, "role group not found", "角色组不存在"),
     ;
     
     private final int code;

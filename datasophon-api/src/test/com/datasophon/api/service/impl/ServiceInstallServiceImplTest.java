@@ -2,6 +2,7 @@ package com.datasophon.api.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.datasophon.api.service.*;
+import com.datasophon.api.service.host.ClusterHostService;
 import com.datasophon.common.model.HostServiceRoleMapping;
 import com.datasophon.common.model.ServiceConfig;
 import com.datasophon.common.model.ServiceRoleHostMapping;
@@ -51,6 +52,10 @@ public class ServiceInstallServiceImplTest {
     private ClusterServiceRoleGroupConfigService mockGroupConfigService;
     @Mock
     private ClusterServiceRoleInstanceService mockRoleInstanceService;
+    @Mock
+    private ServiceConfigLoader mockConfigLoader;
+    @Mock
+    private ServiceRoleMappingValidator mockMappingValidator;
 
     @InjectMocks
     private ServiceInstallServiceImpl serviceInstallServiceImplUnderTest;
@@ -100,6 +105,10 @@ public class ServiceInstallServiceImplTest {
         clusterServiceInstanceEntity.setSortNum(0);
         when(mockServiceInstanceService.getServiceInstanceByClusterIdAndServiceName(0, "serviceName")).thenReturn(
                 clusterServiceInstanceEntity);
+
+        // Configure ServiceConfigLoader.loadConfigForExistingInstance(...).
+        when(mockConfigLoader.loadConfigForExistingInstance(any(ClusterServiceInstanceEntity.class)))
+                .thenReturn(Collections.emptyList());
 
         // Configure ClusterServiceInstanceRoleGroupService.getRoleGroupByServiceInstanceId(...).
         final ClusterServiceInstanceRoleGroup clusterServiceInstanceRoleGroup = new ClusterServiceInstanceRoleGroup();
@@ -228,6 +237,12 @@ public class ServiceInstallServiceImplTest {
         when(mockVariableService.updateById(new ClusterVariable())).thenReturn(false);
         when(mockVariableService.save(new ClusterVariable())).thenReturn(false);
 
+        // Configure ServiceConfigLoader methods (delegated from saveServiceConfig).
+        when(mockConfigLoader.processConfigVariables(anyInt(), anyString(), anyList(), any()))
+                .thenReturn(new HashMap<>());
+        when(mockConfigLoader.buildConfigFileMap(anyString(), anyString(), anyMap()))
+                .thenReturn(new HashMap<>());
+
         // Configure ClusterHostService.list(...).
         final ClusterHostEntity clusterHostEntity = new ClusterHostEntity();
         clusterHostEntity.setId(0);
@@ -295,6 +310,12 @@ public class ServiceInstallServiceImplTest {
         clusterServiceRoleGroupConfig.setServiceName("serviceName");
         when(mockGroupConfigService.getConfigByRoleGroupId(0)).thenReturn(clusterServiceRoleGroupConfig);
 
+        // Configure ServiceConfigLoader config-update methods.
+        when(mockConfigLoader.isConfigNeedUpdate(any(ClusterServiceInstanceEntity.class), anyList()))
+                .thenReturn(true);
+        doNothing().when(mockConfigLoader).buildRoleGroupConfig(anyList(), anyMap(),
+                any(ClusterServiceRoleGroupConfig.class));
+
         when(mockRoleGroupService.count(any(QueryWrapper.class))).thenReturn(0);
         when(mockServiceInstanceService.updateById(new ClusterServiceInstanceEntity())).thenReturn(false);
 
@@ -303,13 +324,13 @@ public class ServiceInstallServiceImplTest {
 
         // Verify the results
         assertEquals(expectedResult, result);
-        verify(mockVariableService).updateById(new ClusterVariable());
-        verify(mockVariableService).save(new ClusterVariable());
-        verify(mockServiceInstanceService).save(new ClusterServiceInstanceEntity());
-        verify(mockRoleGroupService).save(new ClusterServiceInstanceRoleGroup());
-        verify(mockGroupConfigService).save(new ClusterServiceRoleGroupConfig());
+        verify(mockConfigLoader).processConfigVariables(anyInt(), anyString(), anyList(), any());
+        verify(mockConfigLoader).buildConfigFileMap(anyString(), anyString(), anyMap());
+        verify(mockConfigLoader).isConfigNeedUpdate(any(ClusterServiceInstanceEntity.class), anyList());
+        verify(mockConfigLoader).buildRoleGroupConfig(anyList(), anyMap(),
+                any(ClusterServiceRoleGroupConfig.class));
         verify(mockRoleInstanceService).updateToNeedRestart(0);
-        verify(mockServiceInstanceService).updateById(new ClusterServiceInstanceEntity());
+        verify(mockServiceInstanceService).updateById(any(ClusterServiceInstanceEntity.class));
     }
 
     @Test
@@ -435,6 +456,12 @@ public class ServiceInstallServiceImplTest {
         clusterServiceRoleGroupConfig.setServiceName("serviceName");
         when(mockGroupConfigService.getConfigByRoleGroupId(0)).thenReturn(clusterServiceRoleGroupConfig);
 
+        // Configure ServiceConfigLoader config-update methods.
+        when(mockConfigLoader.isConfigNeedUpdate(any(ClusterServiceInstanceEntity.class), anyList()))
+                .thenReturn(true);
+        doNothing().when(mockConfigLoader).buildRoleGroupConfig(anyList(), anyMap(),
+                any(ClusterServiceRoleGroupConfig.class));
+
         when(mockRoleGroupService.count(any(QueryWrapper.class))).thenReturn(0);
         when(mockServiceInstanceService.updateById(new ClusterServiceInstanceEntity())).thenReturn(false);
 
@@ -443,13 +470,13 @@ public class ServiceInstallServiceImplTest {
 
         // Verify the results
         assertEquals(expectedResult, result);
-        verify(mockVariableService).updateById(new ClusterVariable());
-        verify(mockVariableService).save(new ClusterVariable());
-        verify(mockServiceInstanceService).save(new ClusterServiceInstanceEntity());
-        verify(mockRoleGroupService).save(new ClusterServiceInstanceRoleGroup());
-        verify(mockGroupConfigService).save(new ClusterServiceRoleGroupConfig());
+        verify(mockConfigLoader).processConfigVariables(anyInt(), anyString(), anyList(), any());
+        verify(mockConfigLoader).buildConfigFileMap(anyString(), anyString(), anyMap());
+        verify(mockConfigLoader).isConfigNeedUpdate(any(ClusterServiceInstanceEntity.class), anyList());
+        verify(mockConfigLoader).buildRoleGroupConfig(anyList(), anyMap(),
+                any(ClusterServiceRoleGroupConfig.class));
         verify(mockRoleInstanceService).updateToNeedRestart(0);
-        verify(mockServiceInstanceService).updateById(new ClusterServiceInstanceEntity());
+        verify(mockServiceInstanceService).updateById(any(ClusterServiceInstanceEntity.class));
     }
 
     @Test
